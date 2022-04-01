@@ -51,8 +51,7 @@ workflow module_1 {
     rds_and_h5_processing(samples_dirs_ch)
 
     // modifying molecule h5 files (sample_id, path to directory with
-    // molecule info h5 file)
-    // only for genebody and intronic-with-mono
+    // molecule info h5 file) only for genebody and intronic-with-mono GTF files
     molecule_h5_dirs = cellranger_count.out.h5
 	.map{it->[it[0],it[-1]]}
 	.filter{it -> it[1] =~ "genebody|with-mono"}
@@ -97,8 +96,9 @@ process modifying_molecule_h5 {
 
 process cellranger_reanalyse {
     // reanalize each raw h5 file with selected subset of cellbarcodes
-    // The output contains corrected h5 for downstream analysis and
-    //     corrected cloupe for each individual sample
+    // The output contains corrected h5 matrix (not molecule h5 file) which can be used for
+    // downstream analysis and  corrected cloupe for each individual sample
+    // corrected - means that cloupe file will contain cellbarcodes from 4 GTFs
     
     tag "${sample_id}"
     echo true
@@ -119,44 +119,48 @@ process cellranger_reanalyse {
     output:
 
     path("${sample_id}_exonic_${genome_ix}")
-    path("${sample_id}_intronic_with-mono_${genome_ix}")
-    path("${sample_id}_intronic_without-mono_${genome_ix}")
+    path("${sample_id}_intronic-with-mono_${genome_ix}")
+    path("${sample_id}_intronic-without-mono_${genome_ix}")
     path("${sample_id}_genebody_${genome_ix}")
 	 
     script:
+    genebody = "${sample_id}_genebody_${genome_ix}"
+    with_mono = "${sample_id}_intronic-with-mono_${genome_ix}"
+    without_mono = "${sample_id}_intronic-without-mono_${genome_ix}"
+    exonic = "${sample_id}_exonic_${genome_ix}"
     
     """
     cellranger reanalyze --id=exonic \
-           --matrix=${sample_path}/${sample_id}_exonic_${genome_ix}/raw_feature_bc_matrix.h5 \
+           --matrix=${sample_path}/${exonic}/raw_feature_bc_matrix.h5 \
 	   --localcores=${task.cpus} \
 	   --barcodes=${barcodes}
 
     cellranger reanalyze --id=with-mono \
-           --matrix=${sample_path}/${sample_id}_intronic-with-mono_${genome_ix}/raw_feature_bc_matrix.h5 \
+           --matrix=${sample_path}/${with_mono}/raw_feature_bc_matrix.h5 \
 	   --localcores=${task.cpus} \
 	   --barcodes=${barcodes}
 
     cellranger reanalyze --id=without-mono\
-           --matrix=${sample_path}/${sample_id}_intronic-without-mono_${genome_ix}/raw_feature_bc_matrix.h5 \
+           --matrix=${sample_path}/${without_mono}/raw_feature_bc_matrix.h5 \
 	   --localcores=${task.cpus} \
 	   --barcodes=${barcodes}
 
     cellranger reanalyze --id=genebody \
-           --matrix=${sample_path}/${sample_id}_genebody_${genome_ix}/raw_feature_bc_matrix.h5 \
+           --matrix=${sample_path}/${genebody}/raw_feature_bc_matrix.h5 \
 	   --localcores=${task.cpus} \
 	   --barcodes=${barcodes}
 
-    mkdir -p ${sample_id}_exonic_${genome_ix}
-    cp exonic/outs/{cloupe.cloupe,filtered_feature_bc_matrix.h5} ${sample_id}_exonic_${genome_ix}/
+    mkdir -p ${exonic}
+    cp exonic/outs/{cloupe.cloupe,filtered_feature_bc_matrix.h5} ${exonic}/
 
-    mkdir -p ${sample_id}_intronic_without-mono_${genome_ix}
-    cp without-mono/outs/{cloupe.cloupe,filtered_feature_bc_matrix.h5} ${sample_id}_intronic_without-mono_${genome_ix}/
+    mkdir -p ${without_mono}
+    cp without-mono/outs/{cloupe.cloupe,filtered_feature_bc_matrix.h5} ${without_mono}/
 
-    mkdir -p ${sample_id}_intronic_with-mono_${genome_ix}
-    cp with-mono/outs/{cloupe.cloupe,filtered_feature_bc_matrix.h5} ${sample_id}_intronic_with-mono_${genome_ix}/
+    mkdir -p ${with_mono}
+    cp with-mono/outs/{cloupe.cloupe,filtered_feature_bc_matrix.h5} ${with_mono}/
 
-    mkdir -p ${sample_id}_genebody_${genome_ix}
-    cp genebody/outs/{cloupe.cloupe,filtered_feature_bc_matrix.h5} ${sample_id}_genebody_${genome_ix}/
+    mkdir -p ${genebody}
+    cp genebody/outs/{cloupe.cloupe,filtered_feature_bc_matrix.h5} ${genebody}/
 
     ## find . -mindepth 1 -name "*" | grep -v ${sample_id} | xargs rm -rf
     """
