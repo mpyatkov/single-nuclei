@@ -497,6 +497,7 @@ process aggregation_postprocessing {
 
     publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/plots", mode: "copy", pattern: "*.pdf", overwrite: true
     publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/data", mode: "copy", pattern: "*.csv", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/rds", mode: "copy", pattern: "*.rds", overwrite: true
     
     input:
     val(filtered_mx)
@@ -504,6 +505,7 @@ process aggregation_postprocessing {
     
     output:
     path("*.pdf")
+    path("*.rds")
     path("*.csv"), optional: true
     
     script:

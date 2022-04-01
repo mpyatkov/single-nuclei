@@ -719,6 +719,10 @@ if (multiple_parameters) {
     #grid.arrange(grobs = ., ncol = 2, as.table = FALSE) %>% 
     ggsave(filename = "aggr_featureplots.pdf", width = 11, height = 8.5)
   DefaultAssay(userdefined_mx_raw) <- "SCT"
+
+  ## save rds
+  saveRds(userdefined_mx_raw, "module2_aggregated_seurat.rds")
+  
 }
 
 # tictoc::toc()
