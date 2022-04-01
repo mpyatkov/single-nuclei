@@ -28,7 +28,11 @@ workflow module_1 {
     // run cellranger count
     // samples_reads_ch | cellranger_count
     samples_reads_ch.combine(db_indexes) | cellranger_count
-        
+
+    // TODO: make process which will collect all metrics after counting
+    // in one file, sources here:
+    // projectnb2/wax-dk/max/SCexp/calculate_metrics.R
+    
     // Return the sample_dir paths for each sample
     samples_dirs_ch = cellranger_count.out.h5
 	//.view()
