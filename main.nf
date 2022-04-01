@@ -224,7 +224,7 @@ process get_user_defined_cellbarcodes {
 
     script:
     """
-    get_user_defined_cellbarcodes.R --aggregation ${aggr_file} \
+    04_get_user_defined_cellbarcodes.R --aggregation ${aggr_file} \
                                     --userdefined_meta ${userdefined_paths} \
                                     --output aggr-user-defined-barcodes.csv
     """
