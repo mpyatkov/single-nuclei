@@ -1,0 +1,5 @@
+sample_id,chemistry,condition,fastqdir
+G190M1,ARC-v1,Male,/net/waxman-server/mnt/data/volume2/Waxman_Illumina_HiSeq_Raw_Data_02/G190/usftp21.novogene.com/raw_data/G190M1/
+G190M2,ARC-v1,Female,/net/waxman-server/mnt/data/volume2/Waxman_Illumina_HiSeq_Raw_Data_02/G190/usftp21.novogene.com/raw_data/G190M2/
+G190M3,ARC-v1,Male_GHP_12days,/net/waxman-server/mnt/data/volume2/Waxman_Illumina_HiSeq_Raw_Data_02/G190/usftp21.novogene.com/raw_data/G190M3/
+G190M4,ARC-v1,Male_GHP_14days,/net/waxman-server/mnt/data/volume2/Waxman_Illumina_HiSeq_Raw_Data_02/G190/usftp21.novogene.com/raw_data/G190M4/
