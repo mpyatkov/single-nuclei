@@ -368,7 +368,7 @@ process create_aggregation_file {
 
     script:
     """
-    combine_configs.R --samples ${samples} --modified_h5 ${modified_h5} --output aggregation.csv
+    05_combine_configs.R --samples ${samples} --modified_h5 ${modified_h5} --output aggregation.csv
     """
 }
 
