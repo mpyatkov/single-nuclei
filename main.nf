@@ -504,7 +504,7 @@ process aggregation_postprocessing {
     
     script:
     """
-    postaggregation.R --filtered ${filtered_mx} \
+    06_postaggregation.R --filtered ${filtered_mx} \
 		 --userdefined_cellbarcodes ${barcodes_mx}\
 		 --nclusters ${params.module2.seurat_nclusters}\
 		 --mt_percent ${params.module2.mt_percent}\
