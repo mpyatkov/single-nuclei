@@ -90,7 +90,7 @@ process modifying_molecule_h5 {
     """
     cp ${molecule_info_dir_path}/molecule_info.h5 ./
 
-    modify_molecule_h5.R --molecule_info_h5 molecule_info.h5  --cellbarcodes ${cellbarcodes}
+    03_modify_molecule_h5.R --molecule_info_h5 molecule_info.h5  --cellbarcodes ${cellbarcodes}
     """
 }
 
