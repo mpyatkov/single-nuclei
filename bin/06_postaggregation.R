@@ -45,7 +45,11 @@ ParseArguments <- function() {
     p  <- add_argument(p, '--labels_for_umap', 
                        help='activate labels for UMAP plots {Yy, Nn}',
                        default="Y")
-    
+
+    p  <- add_argument(p, '--number_of_cores', 
+                       help='some part of the script can be runned in parallel',
+                       default=2)
+        
     p <- add_argument(p, '--dotplot_gene_list', 
                       help='multiple column csv with a header, each column is list of genes for dotplot, header - plot title',
                       default="dotplot_gene_list.csv")
@@ -259,12 +263,12 @@ get_table_by_id <- function(sid, dff) {
 }
 
 ## supplementary function to create umap
-plot_umap <- function(obj, title, labels = T){
+plot_umap <- function(obj, title, labels = NULL){
   tmp <- DimPlot(obj, reduction = "umap") + 
     ggtitle(title)
   
   ## If labels is required add them to umap plot
-  if (labels_for_umap) {
+  if (!is.null(labels_for_umap)) {
     
     ## to make labels the same color as legend colors use the following code
     # aggr_umap_all_clusters <- LabelClusters(..., color = unique(ggplot_build(aggr_umap_all_clusters)$data[[1]]$colour), ...)
@@ -287,7 +291,11 @@ dotplot <- function(sobj, genes, title = "") {
     {if(title !="") ggtitle(title)} +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
           axis.title.x = element_blank(),
-          axis.title.y = element_blank())
+          axis.title.y = element_blank(),
+          legend.direction = "horizontal", 
+          legend.position = "bottom",
+          legend.box = "horizontal", 
+          legend.justification = "center")
 }
 
 ## supplementary function to create table on the ggplot
@@ -317,13 +325,21 @@ combinedUmapTableDotplot <- function(seurat_obj, TITLE, labels_for_umap, genes_l
   table_for_plots <- cluster_stats %>% 
     select(seurat_clusters, sample_id, ncells)
   
-  ## Plot all samples together on one UMAP without labels
-  aggr_umap_all_clusters <- plot_umap(seurat_obj, title = TITLE, labels = labels_for_umap)
-  
   ## dotplot for all samples together
   DefaultAssay(seurat_obj) <- "RNA"
   gc()
   
+  
+  ## rename clusters (set new_labels)
+  seurat_obj <- RenameIdents(seurat_obj, labels_for_umap$new_labels)
+
+  ## Plot all samples together on one UMAP without labels
+  aggr_umap_all_clusters <- plot_umap(seurat_obj, title = TITLE, labels = labels_for_umap)
+  
+  ## rename clusters back (set old_labels)
+  seurat_obj <- RenameIdents(seurat_obj, labels_for_umap$old_labels)
+  
+    
   ## TODO: at the moment all genes will be represented on the dotplots
   aggr_umap_all_clusters_dotplot <- dotplot(seurat_obj, genes_list)
   
@@ -337,7 +353,7 @@ combinedUmapTableDotplot <- function(seurat_obj, TITLE, labels_for_umap, genes_l
     AAAAC
     BBBBB
     "
-  combined_all_clusters <- cowplot::plot_grid(aggr_umap_all_clusters+
+  combined_all_clusters <- cowplot::plot_grid((aggr_umap_all_clusters+theme(plot.margin=margin(0,1,0,0,"cm")))+
                                                 aggr_umap_all_clusters_dotplot+
                                                 clusters_stats_table_plot+
                                                 plot_layout(design = layout)+plot_annotation(title = sample_id))
@@ -378,25 +394,38 @@ saveUmapDotplotTableIndividual <- function(seurat_obj,
   cluster_stats <- extractClusterStats(seurat_obj, labels = df_cluster_names)
   
   #### attaching cluster labels if exist ####
-  if (!is.null(df_cluster_names)) {  
+  ## user_defined_labels = NULL OR list(old_labels,new_labels)
+  user_defined_labels <- if (!is.null(df_cluster_names)) {  
       ## preparing cluster labels
-      cluster_labels <- unique(cluster_stats$cluster_labels)
-      names(cluster_labels) <- levels(Idents(seurat_obj))
+      newlabels <- unique(cluster_stats$cluster_labels)
+      names(newlabels) <- levels(Idents(seurat_obj))
 
       ## remove NA names
-      cluster_labels <- cluster_labels[!is.na(names(cluster_labels))]
-
+      newlabels <- newlabels[!is.na(names(newlabels))]
+      
+      ## make a copy of old labels, will be recovered latter
+      oldlabels <- setNames(names(newlabels), newlabels)
+      
       ## assign new cluster labels
-      seurat_obj <- RenameIdents(seurat_obj, cluster_labels)
+      list(new_labels = newlabels, old_labels = old_labels)
   }
     
   ## export cluster stats (seurat_obj, cluster labels) for all clusters
   prepareMetaData(cluster_stats) %>% write_csv("aggr_cluster_stats.csv")
   
+  
   ## export meta-data (clusters, cellbarcodes, batch and other columns)
-  seurat_obj@meta.data %>% 
-    select(CB,sample_id:percent.mt, -percent.mt, seurat_clusters) %>% 
-    write_csv("aggr_meta_data.csv")
+  tmp_meta <- seurat_obj@meta.data %>% 
+    select(CB,sample_id:percent.mt, -percent.mt, seurat_clusters) 
+  
+  ## add information about user_defined clusters
+  if(!is.null(user_defined_labels)){
+    tmp_meta <- tmp_meta %>% 
+      left_join(., user_defined_labels$new_labels %>% tibble::enframe(name="seurat_clusters", value = "cluster_labels", by="seurat_clusters"))
+  }
+  
+  tmp_meta %>% write_csv("aggr_meta_data.csv")
+
   
   #### projections export ####
   seurat_obj@reductions$umap@cell.embeddings %>% 
@@ -409,6 +438,23 @@ saveUmapDotplotTableIndividual <- function(seurat_obj,
   ## loop over all samples
   ## create umap/dotplot/table plot for each sample separately
   
+  ### Assign predicted cell types labels
+  ## get new_labels,old_labels,heatmap_table
+  celltypes_list <- FindCellTypesByMarkers(sobj = seurat_obj)
+
+  ## if the user has provided custom labels, use them
+  if (!is.null(user_defined_labels)) {  
+    celltypes_list$new_labels <- user_defined_labels$new_labels
+    celltypes_list$old_label <- user_defined_labels$old_labels 
+  }
+  
+  celltypes_heatmap <- CreateCellTypesHeatmap(celltypes_list$heatmap_table)
+  umap_heatmap_layout <- "
+AAAAA####
+AAAAA#BBB
+AAAAA#BBB
+AAAAA####
+"
   #######################################
   #### umap/dotplot/table plot for all CB
   #######################################
@@ -422,11 +468,11 @@ saveUmapDotplotTableIndividual <- function(seurat_obj,
   
   all_samples_combined <- combinedUmapTableDotplot(seurat_obj = seurat_obj, 
                                                    TITLE = TITLE, 
-                                                   labels_for_umap = labels_for_umap,
+                                                   labels_for_umap = celltypes_list,
                                                    cluster_stats = cluster_stats,
                                                    sample_id = "all",
                                                    genes_list = genes_list)
-  
+  all_samples_combined <- cowplot::plot_grid(all_samples_combined+celltypes_heatmap+plot_layout(design = umap_heatmap_layout))
   
   ###########################################
   #### Plot each batch separately with dotplot
@@ -434,14 +480,16 @@ saveUmapDotplotTableIndividual <- function(seurat_obj,
   ## https://github.com/satijalab/seurat/issues/1825
   ob.list <- SplitObject(seurat_obj, split.by = "batch")
   all_samples_by_sample_id <- lapply(X = names(ob.list), FUN = function(x) {
+    celltypes_list <- FindCellTypesByMarkers(sobj = ob.list[[x]])
+    celltypes_heatmap <- CreateCellTypesHeatmap(celltypes_list$heatmap_table)
     
-    combinedUmapTableDotplot(seurat_obj = ob.list[[x]], 
+    tmp <- combinedUmapTableDotplot(seurat_obj = ob.list[[x]], 
                              TITLE = TITLE, 
-                             labels_for_umap = labels_for_umap,
+                             labels_for_umap = celltypes_list,
                              cluster_stats = cluster_stats,
                              sample_id = x,
                              genes_list = genes_list)
-    
+    umap_heatmap_plot <- cowplot::plot_grid(tmp+celltypes_heatmap+plot_layout(design = umap_heatmap_layout))
     # umap <- plot_umap(ob.list[[x]],"empty title", labels = labels_for_umap)
     # dtplt <- dotplot(ob.list[[x]], unlist(flatten(genes_list)))
     # table <- plot_table(df = get_table_by_id(x, table_for_plots), title = x)
@@ -457,7 +505,7 @@ saveUmapDotplotTableIndividual <- function(seurat_obj,
   #list(aggr_umap_all_clusters, aggr_group_by_batch, aggr_split_by_batch) %>%
   append(list(all_samples_combined), all_samples_by_sample_id) %>% 
     marrangeGrob(nrow =1, ncol=1) %>% 
-    ggsave(filename = "aggr_umaps.pdf", width = 14.19, height = 18.30)
+    ggsave(filename = "aggr_umaps.pdf", width = 20.0, height = 15.50)
   gc()
   
   return(seurat_obj)
@@ -473,7 +521,8 @@ saveUmapDotplotTable <- function(seurat_obj,
                                  npcs, 
                                  min.dist, 
                                  resolution = "auto", 
-                                 k.param = 20) {
+                                 k.param = 20,
+                                 counter = "000") {
   
   print(npcs)
   #seurat_obj <- userdefined_mx_raw
@@ -494,7 +543,7 @@ saveUmapDotplotTable <- function(seurat_obj,
   #userdefined_mx <- recalculate_clusters(13, userdefined_mx)
   print("Extract clusters")
   cluster_stats <- extractClusterStats(seurat_obj)
-  
+
   ## TODO: export by enabled flag
   
   ###########################################
@@ -510,20 +559,109 @@ saveUmapDotplotTable <- function(seurat_obj,
   resolution_text <- grep("SCT_snn_res.", colnames(seurat_obj@meta.data), value = T) %>% 
     gsub("SCT_snn_res.","", .) %>% tail(., n=1)
   
-  TITLE <- str_interp("Aggregated. Resolution: ${resolution_text}, min.dist: ${min.dist}, #PCs: ${npcs}, #clusters: ${number_of_clusters} k.param: ${k.param}" )
+  TITLE <- str_interp("${counter} Aggregated. Resolution: ${resolution_text}, min.dist: ${min.dist}, #PCs: ${npcs}, #clusters: ${number_of_clusters} k.param: ${k.param}" )
+  
+  ### Assign predicted cell types labels
+  ## get new_labels,old_labels,heatmap_table
+  celltypes_list <- FindCellTypesByMarkers(sobj = seurat_obj)
+  celltypes_heatmap <- CreateCellTypesHeatmap(celltypes_list$heatmap_table)
+  
+  umap_heatmap_layout <- "
+AAAAA####
+AAAAA#BBB
+AAAAA#BBB
+AAAAA####
+"
   
   all_samples_combined <- combinedUmapTableDotplot(seurat_obj = seurat_obj, 
                                                    TITLE = TITLE, 
-                                                   labels_for_umap = labels_for_umap,
+                                                   labels_for_umap = celltypes_list,
                                                    cluster_stats = cluster_stats,
                                                    sample_id = "all",
                                                    genes_list = genes_list)
   
-  name <- str_interp("test_aggr_res${resolution_text}_pc${npcs}_dst${min.dist}_cl${number_of_clusters}_kp${k.param}.pdf")
+  umap_heatmap_plot <- all_samples_combined+celltypes_heatmap+plot_layout(design = umap_heatmap_layout)
+
+  name <- str_interp("${counter}_aggr_res${resolution_text}_pc${npcs}_dst${min.dist}_cl${number_of_clusters}_kp${k.param}.pdf")
   
-  all_samples_combined %>% ggsave(filename = name, width = 14.19, height = 18.30)
+  umap_heatmap_plot %>% ggsave(filename = name, width = 20, height = 15.50)
 
 }
+
+## Predict celltypes by set of markers
+FindCellTypesByMarkers <- function(sobj) {
+
+  ## If function can not find any significant genes for several cluster
+  ## then heatmap should show all zeros for such clusters for each celltype
+  ## and such cluster will not be associated with any cell type, preserving the initial index
+  ## this option works because RenameIdents can utilize partitial labels like c(`1` = "AAA", `4` ="BBB")
+  
+  biomarkers <- list(
+    PC = c("Glul","Gulo","Oat","Cyp2e1"),
+    PP = c("Pck1","Cyp2f2","Hal"),
+    Kupffer = c("Clec4f","Csf1r"),
+    Immune = c("Ptprc"),
+    HSC=c("Colec11","Dcn","Ecm1"),
+    Endo=c("Stab2","Gpr182","Kdr","Fcgr2b","Aqp1"),
+    Div=c("Top2a"),
+    Cholang=c("Epcam","Krt19","Krt7","Sox9"),
+  )
+  
+  tmp <- map_dfr(names(biomarkers), function(name) {
+    mm <- FindAllMarkers(sobj,features = biomarkers[[name]] ,logfc.threshold = -10, min.pct = 0.0) 
+    
+    if (is_empty(mm)){
+      mm <- tibble(pval = 1, 
+                   avg_log2FC = 0, 
+                   pct.1 = 0, 
+                   pct.2 = 0, 
+                   p_val_adj = 1,
+                   cluster = as.factor(0), 
+                   gene = biomarkers[[name]][1])
+    }
+    mm %>% 
+      group_by(cluster) %>% 
+      summarise(score = mean(avg_log2FC)) %>%
+      mutate(celltype = name)
+  }) 
+  
+  ## FindAllMarkers skips low expressed genes and produces as output empty rows for some celltypes
+  ## To make full table without empty rows we have to append celltypes with zero scores for such of celltypes
+  
+  heatmap_table <- left_join(tmp %>% expand(cluster,celltype), tmp) %>% 
+    replace_na(list(score = 0))
+  
+  labels <- tmp %>% 
+    group_by(cluster) %>% 
+    summarise(prediction = celltype[which.max(score)]) %>% 
+    ungroup() %>% 
+    mutate(prediction = paste0(prediction,"(",cluster,")"))
+  
+  new_labels <- labels$prediction
+  names(new_labels) <- labels$cluster
+  
+  ## swap names and values
+  old_labels <- setNames(names(new_labels), new_labels)
+  
+  list(new_labels = new_labels, old_labels = old_labels, heatmap_table = heatmap_table)   
+}
+
+## create heatmap by table (cluster, celltype, score)
+CreateCellTypesHeatmap <- function(df){
+  ggplot(df, aes(x = celltype, y = as.factor(cluster))) +
+    geom_tile(aes(fill = score),color= "gray50",size = 0.1)+
+    scale_fill_gradient2(low = "blue", mid="white", high = "tomato")+
+    geom_text(aes(label=round(score,2)), size = 6)+
+    scale_x_discrete(position = "top") +
+    xlab("")+
+    ylab("")+
+    theme_minimal() +
+    theme(legend.title = element_blank(),
+          legend.position = "bottom",
+          axis.text.x = element_text(color = "black",size = 15),
+          axis.text.y = element_text(color = "black", size = 15))
+}
+
 
 ################
 #### PARAMETERS ####
@@ -639,6 +777,9 @@ params <- purrr::cross(list(
     map(lift(list))
 
 
+### add ix for each sublist starting from 001,002 .. length(params)
+params <- map2(seq(length(params)), params,
+               function(ix,l) list_modify(l,ix = str_pad(ix, 3, pad="0")))
 
 # tictoc::tic("Whole time:")
 
@@ -646,7 +787,7 @@ if (multiple_parameters) {
   print("Make multiple plot")
   library(foreach)
   library(doParallel)
-  registerDoParallel(8)
+  registerDoParallel(as.numeric(argv$number_of_cores))
   foreach(i = params) %dopar% {
   
   ## foreach(i = params) %do% {
@@ -664,7 +805,8 @@ if (multiple_parameters) {
                          npcs = i$npcs,
                          min.dist = i$min.dist,
                          resolution = i$resolution,
-                         k.param = i$k.param)
+                         k.param = i$k.param,
+                         counter = i$ix)
     
     gc()
   }
@@ -721,11 +863,13 @@ if (multiple_parameters) {
   DefaultAssay(userdefined_mx_raw) <- "SCT"
 
   ## save rds
-  saveRds(userdefined_mx_raw, "module2_aggregated_seurat.rds")
+  saveRDS(userdefined_mx_raw, "module2_aggregated_seurat.rds")
   
 }
 
-# tictoc::toc()
+  # tictoc::toc()
 
 fn <- "Rplots.pdf"
 if (file.exists(fn)) {file.remove(fn)}
+
+
