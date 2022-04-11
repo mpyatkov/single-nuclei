@@ -523,16 +523,17 @@ process aggregation_postprocessing {
                  --umap_min_dist ${params.module2.umap_min_dist}\
                  --umap_npcs ${params.module2.umap_npcs} \
                  --umap_kparam ${params.module2.umap_kparam} \
-                 --umap_resolution ${params.module2.umap_resolution}
+                 --umap_resolution ${params.module2.umap_resolution} \
+                 --number_of_cores ${task.cpus}
     
     ## TODO: replace SCC installed imagemagick to conda
     ## for range of parameters (like --nclusters "6,7,8") represent all plots as 
     ## combined tiled plot
 
-    if [[ -n \$(find . -name "test*pdf") ]]; then
-        montage -geometry +0+0 -density 150 -tile 2x2 \$(find . -name "test*pdf" | sort -n | paste -s -d ' ') combined_plot.pdf
+    if [[ -n \$(find . -name "*_aggr*pdf") ]]; then
+       montage -geometry +0+0 -density 150 -tile 2x2 \$(find . -name "*_aggr*pdf" | sort -n | paste -s -d ' ') combined_plot.pdf
 
-        rm -rf test*pdf
+       rm -rf *_aggr*pdf
     fi
     """
 }
