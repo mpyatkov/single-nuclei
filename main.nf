@@ -505,7 +505,7 @@ process aggregation_postprocessing {
     
     output:
     path("*.pdf")
-    path("*.rds")
+    path("*.rds"), optional: true
     path("*.csv"), optional: true
     
     script:

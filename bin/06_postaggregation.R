@@ -344,7 +344,7 @@ combinedUmapTableDotplot <- function(seurat_obj, TITLE, labels_for_umap, genes_l
   aggr_umap_all_clusters_dotplot <- dotplot(seurat_obj, genes_list)
   
   
-  clusters_stats_table_plot <- plot_table(get_table_by_id(sample_id, table_for_plots), "All samples together")
+  clusters_stats_table_plot <- plot_table(get_table_by_id(sample_id, table_for_plots), title = "")
   
   ## set layout for 11 plots
   layout <- "
@@ -595,6 +595,8 @@ FindCellTypesByMarkers <- function(sobj) {
   ## then heatmap should show all zeros for such clusters for each celltype
   ## and such cluster will not be associated with any cell type, preserving the initial index
   ## this option works because RenameIdents can utilize partitial labels like c(`1` = "AAA", `4` ="BBB")
+  ## !! If it was detected only one celltype and even if the expression is negative for this celltye
+  ## the procedure anyway assign this celltype for cluster because other is zero
   
   biomarkers <- list(
     PC = c("Glul","Gulo","Oat","Cyp2e1"),
@@ -604,7 +606,7 @@ FindCellTypesByMarkers <- function(sobj) {
     HSC=c("Colec11","Dcn","Ecm1"),
     Endo=c("Stab2","Gpr182","Kdr","Fcgr2b","Aqp1"),
     Div=c("Top2a"),
-    Cholang=c("Epcam","Krt19","Krt7","Sox9"),
+    Cholang=c("Epcam","Krt19","Krt7","Sox9")
   )
   
   tmp <- map_dfr(names(biomarkers), function(name) {
@@ -627,7 +629,9 @@ FindCellTypesByMarkers <- function(sobj) {
   
   ## FindAllMarkers skips low expressed genes and produces as output empty rows for some celltypes
   ## To make full table without empty rows we have to append celltypes with zero scores for such of celltypes
-  
+  ## TODO: make it to tmp also, replace celltype[which.max(score)] to function which will return
+  ## celltype only for positive log2FC, and "unknown" for the rest 
+    
   heatmap_table <- left_join(tmp %>% expand(cluster,celltype), tmp) %>% 
     replace_na(list(score = 0))
   
