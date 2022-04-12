@@ -629,15 +629,13 @@ FindCellTypesByMarkers <- function(sobj) {
   
   ## FindAllMarkers skips low expressed genes and produces as output empty rows for some celltypes
   ## To make full table without empty rows we have to append celltypes with zero scores for such of celltypes
-  ## TODO: make it to tmp also, replace celltype[which.max(score)] to function which will return
-  ## celltype only for positive log2FC, and "unknown" for the rest 
-    
-  heatmap_table <- left_join(tmp %>% expand(cluster,celltype), tmp) %>% 
-    replace_na(list(score = 0))
   
+  tmp <- left_join(tmp %>% expand(cluster,celltype), tmp) %>% 
+        replace_na(list(score = 0))
+    
   labels <- tmp %>% 
-    group_by(cluster) %>% 
-    summarise(prediction = celltype[which.max(score)]) %>% 
+    group_by(cluster) %>%
+    summarise(prediction = ifelse(score[which.max(score)]> 0, celltype[which.max(score)], "Unknown" )) %>% 
     ungroup() %>% 
     mutate(prediction = paste0(prediction,"(",cluster,")"))
   
@@ -647,7 +645,7 @@ FindCellTypesByMarkers <- function(sobj) {
   ## swap names and values
   old_labels <- setNames(names(new_labels), new_labels)
   
-  list(new_labels = new_labels, old_labels = old_labels, heatmap_table = heatmap_table)   
+  list(new_labels = new_labels, old_labels = old_labels, heatmap_table = tmp)   
 }
 
 ## create heatmap by table (cluster, celltype, score)
