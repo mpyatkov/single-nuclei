@@ -12,7 +12,10 @@ samples_reads_ch = Channel
     .fromPath(params.module1.samples_general)
     .splitCsv(skip:1)
     .groupTuple(by:0)
-    .map{it -> [it[0],it[1],it[-1].join(",")]} //sample_id,chemistry,fastqdir
+    .map{it -> [it[0],              //sample_id
+		it[1][0],           //chemistry
+		it[-2].join(","),   //fastq_prefix
+		it[-1].join(",")]}  //fastqdir
 
 userdefined_params = Channel
     .fromPath(params.module1.sample_options)
@@ -90,7 +93,7 @@ process cellranger_count {
 
     input:
     
-    tuple val(sample_id), val(chemistry), val(fastqdir), val(index_id)
+    tuple val(sample_id), val(chemistry), val(fastq_prefix), val(fastqdir), val(index_id)
         
     output:
 
@@ -106,6 +109,7 @@ process cellranger_count {
     """
     cellranger count \
            --id=${sample_index} \
+           --sample=${fastq_prefix} \
            --fastqs=${fastqdir} \
            --transcriptome=${index_id} \
            --localcores=${task.cpus} \
