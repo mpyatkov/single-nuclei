@@ -925,12 +925,13 @@ plot_one_combined_umap <- function(seurat_object, umap_title, config) {
     ## table with mt percents per cluster (assay = RNA- default)
     cluster_percents <- mt_percent_by_rows_and_columns(singlet_seurat_object, mito, regression_var = config$regression_var) 
     cluster_percents_table <- gridExtra::tableGrob(cluster_percents, rows = NULL, theme = ttheme_minimal())
-    
-    cluster_table_label <- "pt_rows - average mt percent per cluster\npt_cols - 100 * sum MT_UMIs / sum All_UMIs"
-    cluster_percents_plot <- grid.arrange(top =grid::textGrob(cluster_table_label, y = -3.5),
-                                          cluster_percents_table)
-    ## tableGrob(cluster_percents, rows = NULL, theme = ttheme_minimal()))
-    
+    h <- grobHeight(cluster_percents_table)
+    w <- grobWidth(cluster_percents_table)
+    title <- textGrob("pt_rows - average mt percent per cluster\npt_cols - 100 * sum MT_UMIs / sum All_UMIs", y=unit(0.5,"npc") + 1.5*h, 
+                      vjust=0, gp=gpar(fontsize=20))
+
+    cluster_percents_plot <- gTree(children = gList(title, cluster_percents_table))
+        
     top_plot <- cowplot::plot_grid((dimplot_dbl + dimplot_dbl_group) / dotplot_dbl + 
                                        plot_layout(nrow = 2, heights = c(4,1)) + 
                                        plot_annotation(title = umap_title, 
