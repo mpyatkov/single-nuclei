@@ -81,7 +81,7 @@ workflow module_1 {
 process cellranger_count {
     
     tag "${sample_index}"
-    echo true
+    // echo true
     cpus 16
     memory '112 GB'
     time '24h'
@@ -182,6 +182,8 @@ process rds_and_h5_processing {
 process modifying_molecule_h5 {
 
     executor 'local'
+    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    conda '/projectnb2/wax-es/routines/condaenv/rlang4'
 
     publishDir path: "${params.output_dir}/corrected_h5_and_cloupe_files/${sample_id}/${output_name}/", mode: "copy", pattern: "*.h5", overwrite: true
     
@@ -208,16 +210,15 @@ process cellranger_reanalyse {
     // corrected - means that cloupe file will contain cellbarcodes from 4 GTFs
     
     tag "${sample_id}"
-    echo true
     cpus 4
     memory '32 GB'
-    time '1h'
+    time '4h'
     
     beforeScript 'source $HOME/.bashrc; module load bcl2fastq/2.20; module load cellranger/6.1.2'
 
 
-    // publishDir path: "${params.output_dir}", mode: "copy", overwrite: true
-    storeDir "${params.output_dir}/corrected_h5_and_cloupe_files/${sample_id}"
+    publishDir path: "${params.output_dir}/corrected_h5_and_cloupe_files/${sample_id}", mode: "copy", overwrite: true
+    // storeDir "${params.output_dir}/corrected_h5_and_cloupe_files/${sample_id}"
 
     input:
     
@@ -278,8 +279,9 @@ process intronic_exonic_plot {
     tag "${sample_id}"
     beforeScript 'source $HOME/.bashrc; module load miniconda'
     conda '/projectnb2/wax-es/routines/condaenv/rlang4'
-    
-    cpus 2
+
+    time '4h'
+    cpus 4
     memory '32 GB'
     // executor 'local'
 
@@ -362,7 +364,7 @@ process create_aggregation_file {
     executor 'local'
     beforeScript 'source $HOME/.bashrc; module load miniconda'
     conda '/projectnb2/wax-es/routines/condaenv/rlang4'
-    echo true
+    // echo true
     // we use publish dir here because we will start module_2 as as
     // separate workflow
     publishDir path: "${projectDir}/configuration/", mode: "copy", overwrite: true
@@ -453,7 +455,7 @@ workflow module_2 {
 
 process cellranger_aggregate {
     // cache false // for test only
-    echo true
+    // echo true
     cpus 16
     // penv 'smp'
     memory '64 GB'
