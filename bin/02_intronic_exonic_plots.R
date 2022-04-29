@@ -516,10 +516,7 @@ recalculate_seurat_object <- function(
     config,
     full = T) 
 {
-    
-    meta_data <- as.data.frame(meta_data)
-    rownames(meta_data) <- meta_data$CB
-    
+        
     ## find optimal number of cluster using binary search for resolution parameter
     binary_search_resolution <- function(expected_clusters, seurat_object) {
         #seurat_object_copy <- seurat_object
@@ -559,7 +556,10 @@ recalculate_seurat_object <- function(
     }
     
     print("==>RUN seurat object<==")
+    meta_data <- as.data.frame(meta_data)
+    rownames(meta_data) <- meta_data$CB
     new_seurat <- seurat_object[,meta_data$CB]
+    ## new_seurat <- subset(seurat_object, cells = meta_data%>%pull(CB))
     print("==>RUN add meta data<==")
     new_seurat <- AddMetaData(new_seurat, meta_data) 
     
@@ -662,7 +662,8 @@ seurat_remove_doublets <- function(seurat_obj, config) {
     ## recalculate seurat again with singlets only
     new_seurat <- recalculate_seurat_object(new_seurat,
                                             meta_data =  tmp_df,
-                                            config)
+                                            config,
+                                            full = F)
     new_seurat
 }
 
@@ -871,7 +872,8 @@ plot_one_combined_umap <- function(seurat_object, umap_title, config) {
     ## recalculate clusters after removing doublets
     singlet_seurat_object <- recalculate_seurat_object(seurat_object, 
                                                        meta_data =  singlet_meta_data,
-                                                       config)
+                                                       config,
+                                                       full = F)
     ### labels for titles/subtitles
     ## extract number of cells for statistics
     tbl_dblts <- table(seurat_object$dblfinder)
@@ -982,7 +984,8 @@ user_defined_plots <- function(df,
     
     seurat_user_with_both_populations <- recalculate_seurat_object(downstream_seurat, 
                                                                    meta_data =  df_user_mtfiltering ,
-                                                                   USER_DEFINED)
+                                                                   USER_DEFINED,
+                                                                   full = T)
     
     ## page 1, bottom plot, pop1/pop2 vs umap
     bottom_p1 <- create_umap(seurat_user_with_both_populations, lst_entry = NULL, config)& scale_colour_hue(direction = -1) 
@@ -1005,7 +1008,8 @@ user_defined_plots <- function(df,
     ## using only selected population, filtering, singlets
     seurat_only_selected_population <- recalculate_seurat_object(downstream_seurat, 
                                                                  meta_data = df_user_mtfiltering_population,
-                                                                 USER_DEFINED)
+                                                                 USER_DEFINED,
+                                                                 full = T)
     seurat_only_selected_population <- seurat_mark_doublets(seurat_only_selected_population)
     
     page2 <- plot_one_combined_umap(seurat_object = seurat_only_selected_population,
@@ -1167,6 +1171,7 @@ if (DOWNSTREAM == "genebody") {
     downstream_seurat <- withmono_raw
 }
 rm(genebody_raw,withmono_raw)
+gc()
 
 ## TODO create downstream_obj
 ## export
@@ -1389,7 +1394,8 @@ export_meta_data(only_filtered, argv$sample_id)
 short_seurat <- recalculate_seurat_object(all_cb_seurat, 
                                           meta_data =  only_filtered %>% 
                                               filter(!!sym(DEFAULT_CONFIG$mt_gtf) < DEFAULT_CONFIG$mt_percent),
-                                          DEFAULT_CONFIG)
+                                          DEFAULT_CONFIG,
+                                          full = F)
 short_seurat <- seurat_mark_doublets(short_seurat)
 gc()
 
