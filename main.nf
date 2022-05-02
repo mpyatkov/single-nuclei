@@ -120,11 +120,7 @@ process cellranger_count {
 
     ## remove all files in outs directory which are not necessary now
     pushd \$PWD/${sample_index}/outs
-    rm -rf *.bam *.bai raw_feature_bc_matrix filtered_feature_bc_matrix
-    
-    ## TODO: remove the following line after checking that modified
-    ##  file works well in aggregation
-    cp molecule_info.h5 molecule_info.h5.orig
+    rm -rf *.bam *.bai raw_feature_bc_matrix filtered_feature_bc_matrix analysis
     popd
     
     ## remove all cellranger temporary files excluding outs directory
@@ -477,7 +473,7 @@ process cellranger_aggregate {
 
     ## remove all files in outs directory which are not necessary now
     pushd aggregated/outs/count
-    rm -rf raw_feature_bc_matrix filtered_feature_bc_matrix raw_feature_bc_matrix.h5
+    rm -rf raw_feature_bc_matrix filtered_feature_bc_matrix raw_feature_bc_matrix.h5 analysis summary.json
     popd
 
     ## remove all cellranger temporary files excluding outs directory
