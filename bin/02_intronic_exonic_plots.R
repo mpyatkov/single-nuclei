@@ -9,10 +9,9 @@ ParseArguments <- function() {
     p <- add_argument(p, '--number_of_umap_clusters', default=9, help='number of clusters for UMAP plots')
     p <- add_argument(p, '--user_slope', default="auto", help='user defined slope parameter')
     p <- add_argument(p, '--user_intercept', default="auto", help='user defined intercept parameter')
-    p <- add_argument(p, '--user_mt_gtf', default="with-mono", help='gtf name we use for MT filtering')
-    p <- add_argument(p, '--downstream_gtf', default="genebody", help='Downstream GTF which UMIs will be used')
     p <- add_argument(p, '--user_mt_percent', default="10", help='keep only cells less than this MT filtering percent')
     p <- add_argument(p, '--user_population', default="1", help='use only part of the data (1 - above the diagonal, 2- below the diagonal, 3 - both)')
+    p <- add_argument(p, '--downstream_gtf', default="genebody", help='Downstream GTF which UMIs will be used')
     return(parse_args(p))
 }
 
@@ -780,7 +779,7 @@ plot_umap_dotplot <- function(short_seurat) {
     NormalizeData(., assay = "RNA") %>% 
     ScaleData(., assay = "RNA")
   
-  DotPlot(short_seurat, features = c(MS_list1, genes_zones, mito), assay = "RNA")+
+  DotPlot(short_seurat, features = c(genes_zones, MS_list1, mito), assay = "RNA")+
     RotatedAxis()+
     theme(axis.text.y = element_text(size = 9),
           axis.text.x = element_text(size = 12, angle = 90, hjust = 1, vjust = 0.5),
@@ -918,11 +917,11 @@ plot_one_combined_umap <- function(seurat_object, umap_title, config) {
       NormalizeData(., assay = "RNA") %>%
       ScaleData(., assay = "RNA")
     
-    dotplot_dbl <-  DotPlot(seurat_object, features = c(MS_list1, genes_zones, mito), assay = "RNA")+RotatedAxis()
+    dotplot_dbl <-  DotPlot(seurat_object, features = c(genes_zones, MS_list1, mito), assay = "RNA")+RotatedAxis()
     
     ## dimplot for singlets only + dotplot
     dimplot_sng <- DimPlot(singlet_seurat_object, reduction = "umap", label = TRUE, label.size = 7)
-    dotplot_sng <-  DotPlot(singlet_seurat_object, features = c(MS_list1, genes_zones, mito), assay = "RNA")+RotatedAxis()
+    dotplot_sng <-  DotPlot(singlet_seurat_object, features = c(genes_zones, MS_list1, mito), assay = "RNA")+RotatedAxis()
     
     ## table with mt percents per cluster (assay = RNA- default)
     cluster_percents <- mt_percent_by_rows_and_columns(singlet_seurat_object, mito, regression_var = config$regression_var) 
@@ -1066,7 +1065,7 @@ combined_clusters_to_scatterplot <- function(seurat_obj_all, seurat_obj_user, df
       ScaleData(., assay = "RNA")
     
     all_cb <- DotPlot(seurat_obj_all, 
-                      features = c(MS_list1, genes_zones, mito), 
+                      features = c(genes_zones, MS_list1, mito), 
                       assay = "RNA")+
     RotatedAxis()+
       theme(axis.text.y = element_text(size = 9),
@@ -1075,7 +1074,7 @@ combined_clusters_to_scatterplot <- function(seurat_obj_all, seurat_obj_user, df
             legend.title=element_text(size=7))
     
     user_cb <- DotPlot(seurat_obj_user, 
-                       features = c(MS_list1, genes_zones, mito), 
+                       features = c(genes_zones, MS_list1, mito), 
                        assay = "RNA")+
       RotatedAxis()+
       theme(axis.text.y = element_text(size = 9),
@@ -1139,34 +1138,27 @@ MS_list1 <- c('Il2rb','Cxcr6','Gzma','Csf3r','S100a6','Pkhd1','Sox9','Epcam',
 mito <- c("mt-Atp6","mt-Atp8","mt-Co3","mt-Co1","mt-Co2","mt-Nd2","mt-Nd4","mt-Cytb",
           "mt-Nd1","mt-Nd3","mt-Nd4l","mt-Nd5","mt-Nd6")
 
-argv$user_mt_gtf <- get_gtf_name(argv$user_mt_gtf)
-
 ## load RDS file -> genebody and withmono filtered objects
 load(argv$input_rds)
 print(argv)
 
 ## we need to specify which (genebody or withmono) downstream object
 ##    and remove the rest
-parse_downstream_gtf <- function(param){
-    if (param == "with-mono") return("withmono")
-    else if (param == "without-mono") return("intronic")
-    else if (param == "exonic") return(param)
-    else if (param == "genebody") return(param)
-    else return(NULL)
-}
 
 ## !!! withmono_raw and genebody_raw in rds contains only union of 4 GTF
-## based cellbarcodes (not all of them)
+## based cell barcodes (not all raw cell barcodes)
 
 downstream_seurat_name <- NULL
 downstream_seurat <- NULL
-DOWNSTREAM <- argv$downstream_gtf %>% parse_downstream_gtf
+
+DOWNSTREAM <- argv$downstream_gtf %>% get_gtf_name
+
 if (DOWNSTREAM == "genebody") {
     print("==> FOR DOWNSTREAM ANALYSIS WE WILL USE GENEBODY BASED SEURAT OBJECT <==")
     downstream_seurat_name <- "genebody_raw"
     downstream_seurat <- genebody_raw
 } else {
-    print("==> FOR DOWNSTREAM ANALYSIS WE WILL USE WITHMONO BASED SEURAT OBJECT <==")
+    print("==> FOR DOWNSTREAM ANALYSIS WE WILL USE WITH-MONO BASED SEURAT OBJECT <==")
     downstream_seurat_name <- "withmono_raw"
     downstream_seurat <- withmono_raw
 }
@@ -1210,9 +1202,9 @@ USER_DEFINED <- list(
     population = case_when(argv$user_population == "1" ~ "Pop_1",
                            argv$user_population == "2" ~ "Pop_2",
                            TRUE ~ "Pop_1|Pop_2"),
-    short_gtf = argv$user_mt_gtf,
-    mt_gtf = paste0("percent.mt_",argv$user_mt_gtf),
-    regression_var = paste0("percent.mt_",argv$user_mt_gtf),
+    short_gtf = DOWNSTREAM,
+    mt_gtf = paste0("percent.mt_",DOWNSTREAM),
+    regression_var = paste0("percent.mt_",DOWNSTREAM),
     mt_percent = as.numeric(argv$user_mt_percent),
     number_of_umap_clusters = argv$number_of_umap_clusters
 )

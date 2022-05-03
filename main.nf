@@ -17,9 +17,12 @@ samples_reads_ch = Channel
 		it[-2].join(","),   //fastq_prefix
 		it[-1].join(",")]}  //fastqdir
 
+module_1_features_ch = Channel.fromList(['genebody','with-mono'])
+
 userdefined_params = Channel
     .fromPath(params.module1.sample_options)
     .splitCsv(skip: 1)
+    .combine(module_1_features_ch)
 
 // MODULE 1
 workflow module_1 {
@@ -71,10 +74,11 @@ workflow module_1 {
     samples_dirs_ch.join(cellbarcodes) | cellranger_reanalyse
 
     rds = rds_and_h5_processing.out.rds
-    userdefined_ch = rds.join(userdefined_params)
+    //userdefined_ch = rds.join(userdefined_params).combine(module_1_features_ch).view()
+    userdefined_ch = rds.combine(userdefined_params, by:0)
 
     // make plots for module I
-    intronic_exonic_plot(userdefined_ch, params.module1.seurat_nclusters, params.module1.downstream_gtf)
+    intronic_exonic_plot(userdefined_ch, params.module1.seurat_nclusters)
 }
 
 // module1: calculate each sample separately
@@ -286,9 +290,8 @@ process intronic_exonic_plot {
     publishDir path: "${params.output_dir}/module_1_outputs/${sample_id}/data/", mode: "copy", pattern: "${sample_id}_${gtfname_genome}_info.h5", overwrite: true
 
     input:
-    tuple val(sample_id), val(rds), val(slope), val(intercept), val(mt_gtf), val(mt_percent), val(population)
+    tuple val(sample_id), val(rds), val(slope), val(intercept), val(mt_percent), val(population), val(downstream_gtf)
     val(number_of_umap_clusters)
-    val(downstream_gtf)
 
     output:
     path("*.pdf")
@@ -302,7 +305,6 @@ process intronic_exonic_plot {
       --number_of_umap_clusters ${number_of_umap_clusters}\
       --user_slope ${slope}\
       --user_intercept ${intercept}\
-      --user_mt_gtf ${mt_gtf}\
       --user_mt_percent ${mt_percent}\
       --user_population ${population}\
       --downstream_gtf ${downstream_gtf}
@@ -407,8 +409,8 @@ workflow module_2 {
     // directory is not suitable for us
     module_2_aggr_csv_ch = channel.value(projectDir+'/configuration/aggregation.csv')
     
-    // create temporary file with all pathes to individual user-defined meta files
-    module_2_meta_ch = channel.fromPath("${params.output_dir}/module_1_outputs/**user-defined_cloupe*.csv")
+    // create temporary file with all paths to individual user-defined meta files
+    module_2_meta_ch = channel.fromPath("${params.output_dir}/module_1_outputs/${params.module2.downstream_gtf}/**user-defined_cloupe*.csv")
 	.map{it -> it.toString()}
 	.collectFile(name: 'samples_path.csv', newLine: true)
 
