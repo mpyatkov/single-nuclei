@@ -22,7 +22,8 @@ library(readr)
 samples <- read_csv(argv$samples, col_names = T) %>%
     select(-fastq_prefix,-fastqdir,-chemistry)
 
-modified_h5 <- read_csv(argv$modified_h5, col_names = T)
+modified_h5 <- read_csv(argv$modified_h5, col_names = F) %>%
+    select(sample_id = X1, molecule_h5 = X2)
 
 full_join(samples, modified_h5, by="sample_id") %>%
     select(sample_id, molecule_h5, everything()) %>%

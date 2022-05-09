@@ -31,17 +31,26 @@ params {
     // TODO: description of the module
     
     module1 {
-
+	// Module1: preliminary analysis of all samples separately
+ 	
 	// sample configuration file contains information about tech.,
 	// bio.replicates and batches
 	samples_general='configuration/samples.csv'
 
 	// sample options - user defined option per sample
 	sample_options='configuration/samples_userdefined.csv'
+    }
 
-	// // which GTF to use for MT percent calculation, same parameter we
-	// // use for SCTransform regression procedure
-	// mt_filtering_gtf='with-mono'
+    // TODO: description of the module
+    
+    module2 {
+
+	// Directory for temporary configuration files which used in the pipeline
+
+	// NOTE: "temporary_configs" ARE GIVEN AS AN EXAMPLE AND
+	// CHANGING THEM DOES NOT AFFECT THE OPERATION OF THE PIPELINE.
+	
+	temporary_configs = "${params.output_dir}/module_2_outputs/temporary_configs/"
 	
 	// default GTF file for single nuclei processing, only 2 options
 	// 'with-mono' - intronic + monoexonic
@@ -61,20 +70,38 @@ params {
 	// this options also means which molecule_info.h5 
 	// "with-mono" means that we will modify intronic-with-monoexonic
 	// molecule_info.h5 files (other option should be "genebody")
-	
-	// In addition that mean what raw file with UMIs we are going
-	// to use for the downstream analysis.
-	// downstream_gtf = 'with-mono'
-	downstream_gtf = 'genebody'
-	
-	// Default number of clusters on UMAP plot
-	seurat_nclusters = 12
-	
-    }
+		
+	// downstream_umi can be 'genebody', 'with-mono' or custom full path
+	// First and second will aggregate new matrix based on data in module 1
+	// the former is full path to previously calculated aggregation matrix 
 
-    // TODO: description of the module
-    
-    module2 {
+	// aggregation_config - configuration file with all information
+	// about which molecule_info.h5 files should be aggregated
+	// Options:
+	// 1. 'auto' - means collect molecule_info.h5 files for "genebody"
+	//          and "intronic-mono-exonic" features separately in two
+	//          aggregation.csv files. Create for each two separate UMI matrices.
+	// 2. custom path to configuration aggregation.csv file
+	
+	aggregation_config = 'auto'
+	
+	// ----------
+	// downstream_umi = '/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggregation.pop2/with-mono/filtered_feature_bc_matrix.h5'
+	downstream_umi = 'genebody'
+	// users_cellbarcodes = '/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggr-user-defined-barcodes.csv'
+	
+	// downstream_umi = '/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggregation/genebody/filtered_feature_bc_matrix.h5'
+	// users_cellbarcodes = '/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggr-user-defined-barcodes.csv'
+	// downstream_umi = "with-mono"
+	users_cellbarcodes = "with-mono"
+	// ----------
+	
+	// By default pipeline will recalculate cellbarcodes by
+        // collecting all user-defined cellbarcodes for each separate sample from
+	// module1 directories to file: "../output/module_2_outputs/aggr-user-defined-barcodes.csv"
+        // In case when we would like to use own, manually prepared
+        // cellbarcodes file we need to set the following option to "false" and replace this ^^^ file.
+        // recalculate_cellbarcodes = true
 	
 	// gene names for dotplot, header = title on dotplot, each column separate plot
     	dotplot_gene_list = 'configuration/dotplot_gene_list.csv'
@@ -89,9 +116,9 @@ params {
 	labels_for_umap = "Y"
 
 	// Default number of clusters on UMAP plot (should be quoted)
-	seurat_nclusters = "11"
-	umap_min_dist="0.01"
-        umap_npcs="10"
+	seurat_nclusters = "8"
+	umap_min_dist="0.001"
+        umap_npcs="8"
         umap_kparam="20"
         umap_resolution="auto"
 	//umap_resolution="0.125"
@@ -107,7 +134,5 @@ params {
 	min_genes = 400
 	// number of molecules detected within each cell
 	min_counts = 400
-
-	
     }
 }

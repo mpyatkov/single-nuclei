@@ -183,7 +183,7 @@ process modifying_molecule_h5 {
     beforeScript 'source $HOME/.bashrc; module load miniconda'
     conda '/projectnb2/wax-es/routines/condaenv/rlang4'
 
-    publishDir path: "${params.output_dir}/corrected_h5_and_cloupe_files/${sample_id}/${output_name}/", mode: "copy", pattern: "*.h5", overwrite: true
+    publishDir path: "${params.output_dir}/corrected_h5/${sample_id}/${output_name}/", mode: "copy", pattern: "*.h5", overwrite: true
     
     input:
     tuple val(sample_id), val(cellbarcodes), val(output_name), val(molecule_info_dir_path)
@@ -215,7 +215,7 @@ process cellranger_reanalyse {
     beforeScript 'source $HOME/.bashrc; module load bcl2fastq/2.20; module load cellranger/6.1.2'
 
 
-    publishDir path: "${params.output_dir}/corrected_h5_and_cloupe_files/${sample_id}", mode: "copy", overwrite: true
+    publishDir path: "${params.output_dir}/corrected_cloupe_files/${sample_id}", mode: "copy", overwrite: true
     // storeDir "${params.output_dir}/corrected_h5_and_cloupe_files/${sample_id}"
 
     input:
@@ -279,17 +279,16 @@ process intronic_exonic_plot {
     conda '/projectnb2/wax-es/routines/condaenv/rlang4'
 
     time '4h'
-    cpus 4
-    memory '32 GB'
+    cpus 8
+    memory '64 GB'
     // executor 'local'
 
-    publishDir path: "${params.output_dir}/module_1_outputs/${sample_id}/plots/", mode: "copy", pattern: "*.pdf", overwrite: true
-    publishDir path: "${params.output_dir}/module_1_outputs/${sample_id}/data/", mode: "copy", pattern: "*.csv", overwrite: true
-    publishDir path: "${params.output_dir}/module_1_outputs/${sample_id}/data/", mode: "copy", pattern: "${sample_id}_${gtfname_genome}_info.h5", overwrite: true
+    publishDir path: "${params.output_dir}/module_1_outputs/${downstream_gtf}/${sample_id}/plots/", mode: "copy", pattern: "*.pdf", overwrite: true
+    publishDir path: "${params.output_dir}/module_1_outputs/${downstream_gtf}/${sample_id}/data/", mode: "copy", pattern: "*.csv", overwrite: true
+    // publishDir path: "${params.output_dir}/module_1_outputs/${downstream_gtf}/${sample_id}/data/", mode: "copy", pattern: "${sample_id}_${gtfname_genome}_info.h5", overwrite: true
 
     input:
     tuple val(sample_id), val(rds), val(slope), val(intercept), val(mt_percent), val(population), val(downstream_gtf)
-    val(number_of_umap_clusters)
 
     output:
     path("*.pdf")
@@ -313,86 +312,58 @@ process intronic_exonic_plot {
 
 
 // MODULE 2 PRECONFIGURATION
+workflow module2_create_aggr_config {
+    // This subworkflow produces {feature}_aggregation.csv files
+    // 1. Collects all modified molecule_info.h5 files
+    // 2. Separates lines by feature (genebody/with-mono)
+    // 3. Save line to files with name "feature"
+    // 4. Appends information from sample_ch to the files
+    // 5. Export aggregation.csv files (additionally makes copies in module_2_outputs)
 
-workflow module2_preconfiguration {
-    // this subprocess is only required because users can modify the
-    // aggregation.csv files and remove some of the samples
-    
-    // get all modified h5 files from all directories in output
-    channel.fromPath("${params.output_dir}/corrected_h5_and_cloupe_files/**molecule_info.h5")
-	.filter{it -> it =~ params.module1.downstream_gtf }
-	.map{it -> [it.parent.parent.getName(),
-		    it]}
-	.toSortedList{a,b -> a[0] <=> b[0]}
-	.map{it->it.collect{lst -> lst.join(",")}}
-    | h5_modified_file
+    take:
+    downstream_umi
+
+    main:
+    modified_h5 = downstream_umi
+	.combine(channel.fromPath("${params.output_dir}/corrected_h5/**molecule_info.h5"))
+	.filter{it -> it[1] =~ it[0] }
+	.groupTuple(by:0)
+	.map{it -> [it[0],
+		    it[1].sort().collect{el -> [el.parent.parent.getName(), el].join(",")}]}
+	.collectFile(){line ->
+	    ["${line[0]}", line[1].join("\n")]
+	}
+	.map{it -> [it.getName(), it]}
 
     // append information from samples_ch to aggregation file
-    module_2_aggr_ch = create_aggregation_file(samples_ch, h5_modified_file.out.h5_list)
+    module_2_aggr_ch = create_aggregation_file(samples_ch, modified_h5)
+
+    emit:
+    module_2_aggr_ch.aggr_csv
 }
 
-process get_user_defined_cellbarcodes {
-
-    beforeScript 'source $HOME/.bashrc; module load miniconda'
-    conda '/projectnb2/wax-es/routines/condaenv/rlang4'
-
-    executor 'local'
-    
-    publishDir path: "${params.output_dir}/module_2_outputs", mode: "copy", pattern: "*.csv", overwrite: true
-    
-    input:
-    path(aggr_file)
-    path(userdefined_paths)
-    
-    output:
-    path("aggr-user-defined-barcodes.csv")
-
-    script:
-    """
-    04_get_user_defined_cellbarcodes.R --aggregation ${aggr_file} \
-                                    --userdefined_meta ${userdefined_paths} \
-                                    --output aggr-user-defined-barcodes.csv
-    """
-}
+// TEST ONLY
+// workflow {
+//     module_1_features_ch | module2_create_aggr_config  | view
+// }
 
 process create_aggregation_file {
-
     executor 'local'
     beforeScript 'source $HOME/.bashrc; module load miniconda'
     conda '/projectnb2/wax-es/routines/condaenv/rlang4'
-    // echo true
-    // we use publish dir here because we will start module_2 as as
-    // separate workflow
-    publishDir path: "${projectDir}/configuration/", mode: "copy", overwrite: true
+    publishDir path: "${params.module2.temporary_configs}", mode: "copy", overwrite: true, saveAs : {filename -> "${feature}_${filename}"}
     
     input:
     val(samples)
-    val(modified_h5)
+    tuple val(feature), val(modified_h5)
     
     output:
-    path("aggregation.csv"), emit: aggr_csv
+    tuple val(feature), path("aggregation.csv"), emit: aggr_csv
 
     script:
     """
     05_combine_configs.R --samples ${samples} --modified_h5 ${modified_h5} --output aggregation.csv
     """
-}
-
-process h5_modified_file {
-
-    executor 'local'
-    input:
-    val(path_lines)
-
-    output:
-    path("h5_modified_list.csv"), emit: h5_list
-
-    script:
-    def cmd="echo 'sample_id,molecule_h5' > h5_modified_list.csv\n"
-    for( int i=0; i<path_lines.size(); i++ ) {
-	cmd+="echo '${path_lines[i]}' >> h5_modified_list.csv\n"
-    } 
-    cmd
 }
 
 // END MODULE 2 PRECONFIGURATION
@@ -405,49 +376,93 @@ workflow module_2 {
     // here I am using aggregation.csv from the output directory, because
     // this file may have been edited, so the version from the working
     // directory is not suitable for us
-    module_2_aggr_csv_ch = channel.value(projectDir+'/configuration/aggregation.csv')
+    // module_2_aggr_csv_ch = channel.value(projectDir+'/configuration/aggregation.csv')
+    module_2_aggr_csv_ch = null
     
-    // create temporary file with all paths to individual user-defined meta files
-    module_2_meta_ch = channel.fromPath("${params.output_dir}/module_1_outputs/${params.module2.downstream_gtf}/**user-defined_cloupe*.csv")
-	.map{it -> it.toString()}
-	.collectFile(name: 'samples_path.csv', newLine: true)
+    // if UMI matrix does not exist try to aggregate samples first
+    def aggr_filtered_ch = null
+    if (params.module2.downstream_umi.contains("/")) {
 
-    // Problem: After aggregation all samples represented in aggregation.csv
-    // will have specific numeration based on row position in this file.
-    // ex. G183M1 --> cellbarcodes-1
-    //     G183M2 --> cellbarcodes-2
-    //     G183M4 --> cellbarcodes-3
-       
-    // it supposed that we can remove some lines from aggregation.csv
-    // (removing low quality samples), that means we should reorder
-    // 'dashes' (-1,-2,... for each sample) in user defined meta files
-    // to associate cellbarcodes in right order
+	// get UMI matrix from the custom path
+	aggr_filtered_ch = channel.value(file(params.module2.downstream_umi))
+	
+    } else {
+	
+	// Aggregate for two features [genebody,with-mono], aggregation_config == "auto"
+	// OR
+	// Aggregate for custom aggregated.csv file, aggregation_config = "/custom/path/to/aggregation.csv"
+	// for "auto" it will be created two directories ../aggregation/[genebody,with-mono] with UMI matrices
+	// for custom path just one output directory ../aggregation/[custom]
 
-    // Combine all files with user-defined meta data to one file
-    // and choose only cellbarcodes from samples which have only been
-    // presented in aggregation.csv, changing 'dash' to correct one.
-    // output: table with 1 column - CB (correct "dashed" cell barcodes)
-    // copy it to /module_2_outputs/aggr-user-defined-barcodes.csv
-    // because probably we would like to change it in feature
-    get_user_defined_cellbarcodes(module_2_aggr_csv_ch, module_2_meta_ch)
-    
-    // userdefined barcodes which were collected from individual
-    // samples barcodes and sliced by userdefined parameters (see configuration/sample_options.csv)
-    user_barcodes_ch = channel.value(file(params.output_dir+'/module_2_outputs/aggr-user-defined-barcodes.csv'))
+	if (params.module2.aggregation_config == "auto") {
+	    // get channel with two aggregation.csv configs paths [feature_name, path]
+	    module_2_aggr_csv_ch = module_1_features_ch | module2_create_aggr_config
+	    module_2_aggr_csv_ch | cellranger_aggregate
 
-    // get h5 filtered matrix from aggregated samples
-    module_2_aggr_csv_ch | cellranger_aggregate
-    aggr_filtered_ch = cellranger_aggregate.out.filtered_matrix
+	    // just return path to one UMI matrix which specified in "downstream_umi" parameter
+	    aggr_filtered_ch = cellranger_aggregate.out.filtered_matrix
+		.filter{feature,path -> feature =~ params.module2.downstream_umi}
+		.map{it -> it}
+	    
+	} else {
+	    // make channel ["custom", /path/to/aggregation.csv]
+	    module_2_aggr_csv_ch = channel.value("custom").combine(channel.value(params.module2.aggregation_config))
+	    module_2_aggr_csv_ch | cellranger_aggregate
+
+	    //just return "custom" UMI matrix 
+	    aggr_filtered_ch = cellranger_aggregate.out.filtered_matrix
+	}
+	
+    }
     
-    // only for debug
-    // aggr_filtered_ch = channel.value(file("${params.output_dir}/module_2_outputs/aggregation/count/filtered_feature_bc_matrix.h5"))
+    // preparing cell barcodes
+    def user_barcodes_ch = null
+    if (params.module2.users_cellbarcodes.contains("/")) {
+	// if user has already prepared file with cell barcodes
+	user_barcodes_ch = channel.value(file(params.module2.users_cellbarcodes))
+    } else {
+	// If the user does not have custom cell barcodes, they must be extracted from Module 1.
+	// Problem: After the aggregation, all samples provided in
+	// aggregation.csv will have a specific numbering based on the
+	// position of the row in that file.
+	// ex. G183M1 --> cellbarcodes-1
+	//     G183M2 --> cellbarcodes-2
+	//     G183M4 --> cellbarcodes-3
+	//  it ^^^^^^ supposed that we can remove some lines from aggregation.csv
+	// (removing low quality samples), that means we should reorder
+	// 'dashes' (-1,-2,... for each sample) in user defined meta files
+	// to associate cellbarcodes in the correct order
+
+	// create temporary file with all paths to individual user-defined meta files
+	module_2_meta_ch = channel.fromPath("${params.output_dir}/module_1_outputs/${params.module2.users_cellbarcodes}/**user-defined_cloupe*.csv")
+	    .map{it -> it.toString()}
+	    .collectFile(name: 'samples_path.csv', newLine: true)//.view{it -> it.text}
+
+	// Combine all files with user-defined meta data to one file
+	// and choose only cellbarcodes from samples which have only been
+	// presented in aggregation.csv, changing 'dash' to correct one.
+	// output: table with 1 column - CB with correct "dashed" cell barcodes
+	// copy it to /module_2_outputs/aggr-user-defined-barcodes.csv
+	// because probably we would like to change it in feature
+	only_required_cellbarcodes = module_2_aggr_csv_ch
+	    .filter{it -> it[0] =~ "${params.module2.users_cellbarcodes}"}
+	
+	get_user_defined_cellbarcodes(only_required_cellbarcodes, module_2_meta_ch)
+
+	// userdefined barcodes which were collected from individual
+	// samples barcodes and sliced by userdefined parameters (see configuration/sample_options.csv)
+	user_barcodes_ch = get_user_defined_cellbarcodes.out.user_cellbarcodes
+    }
+
+    // // JUST FOR TEST
+    // aggr_filtered_ch | view
+    // module_2_aggr_csv_ch | view
+    // user_barcodes_ch | view
     
-    // postprocessing using matrix with the filtered barcodes and
-    // table with user defined barcodes
+    // postprocessing using matrix with the filtered barcodes and table with user
+    // defined barcodes
     aggregation_postprocessing(aggr_filtered_ch, user_barcodes_ch)
-    // aggregation_postprocessing(cellranger_aggregate.out.filtered_matrix, user_barcodes_ch)
 }
-
 
 process cellranger_aggregate {
     // cache false // for test only
@@ -459,17 +474,18 @@ process cellranger_aggregate {
     time '24h'
     beforeScript 'source $HOME/.bashrc; module load bcl2fastq/2.20; module load cellranger/6.0.1'
 
-    publishDir path: "${params.output_dir}/module_2_outputs/aggregation", mode: "copy", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/aggregation/${downstream_umi}/", mode: "copy", overwrite: true
 
     input:
-    val(aggr_file)
+    tuple val(downstream_umi), val(aggr_file)
     
     output:
     path("*")
-    path("filtered_feature_bc_matrix.h5"), emit: filtered_matrix
-    
+    tuple val(downstream_umi), path("filtered_feature_bc_matrix.h5"), emit: filtered_matrix
+
+    script:
     """
-    cellranger aggr --id=aggregated --csv=${aggr_file}
+    cellranger aggr --id=aggregated --csv=${aggr_file} --localcores=8
 
     ## remove all files in outs directory which are not necessary now
     pushd aggregated/outs/count
@@ -485,6 +501,39 @@ process cellranger_aggregate {
     mv \$PWD/count/cloupe.cloupe \$PWD/
     rm aggregation.csv
     rm -rf \$PWD/aggregated/ 
+    rm -rf \$PWD/count
+    """
+
+    stub:
+    """
+    touch filtered_feature_bc_matrix.h5
+    """
+}
+
+process get_user_defined_cellbarcodes {
+
+    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    conda '/projectnb2/wax-es/routines/condaenv/rlang4'
+
+    executor 'local'
+    
+    publishDir path: "${params.module2.temporary_configs}", mode: "copy", pattern: "*.csv", overwrite: true
+    
+    input:
+    tuple val(downstream_umi), path(aggr_file)
+    path(userdefined_paths)
+    
+    output:
+    path("${downstream_umi}_aggr-user-defined-barcodes.csv"), emit: user_cellbarcodes
+
+    // when:
+    // !userdefined_paths.exists() | params.module2.recalculate_cellbarcodes
+    
+    script:
+    """
+    04_get_user_defined_cellbarcodes.R --aggregation ${aggr_file} \
+                                    --userdefined_meta ${userdefined_paths} \
+                                    --output ${downstream_umi}_aggr-user-defined-barcodes.csv
     """
 }
 
@@ -497,12 +546,12 @@ process aggregation_postprocessing {
     cpus 8
     memory '64 GB'
 
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/plots", mode: "copy", pattern: "*.pdf", overwrite: true
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/data", mode: "copy", pattern: "*.csv", overwrite: true
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/rds", mode: "copy", pattern: "*.rds", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi}/plots", mode: "copy", pattern: "*.pdf", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi}/data", mode: "copy", pattern: "*.csv", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi}/rds", mode: "copy", pattern: "*.rds", overwrite: true
     
     input:
-    val(filtered_mx)
+    tuple val(downstream_umi), val(filtered_mx)
     val(barcodes_mx)
     
     output:
@@ -537,5 +586,12 @@ process aggregation_postprocessing {
 
        rm -rf *_aggr*pdf
     fi
+    """
+
+    stub:
+    """
+    touch stub_aggr_umap.pdf
+    touch stub.rds
+    touch stub_data.csv
     """
 }
