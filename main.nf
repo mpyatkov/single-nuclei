@@ -41,8 +41,6 @@ workflow module_1 {
     
     // Return the sample_dir paths for each sample
     samples_dirs_ch = cellranger_count.out.h5
-	//.view()
-	// .collect()
 	.map{it -> [it[0],
 		    it[1].toString().split("_").last().toString(),
 		    it[1].toString(),
@@ -78,7 +76,7 @@ workflow module_1 {
     userdefined_ch = rds.combine(userdefined_params, by:0)
 
     // make plots for module I
-    intronic_exonic_plot(userdefined_ch, params.module1.seurat_nclusters)
+    intronic_exonic_plot(userdefined_ch)
 }
 
 // module1: calculate each sample separately
@@ -302,7 +300,7 @@ process intronic_exonic_plot {
     02_intronic_exonic_plots.R \
       --sample_id ${sample_id}\
       --input_rds ${rds}\
-      --number_of_umap_clusters ${number_of_umap_clusters}\
+      --number_of_umap_clusters 9\
       --user_slope ${slope}\
       --user_intercept ${intercept}\
       --user_mt_percent ${mt_percent}\
