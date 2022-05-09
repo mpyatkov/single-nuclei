@@ -610,7 +610,7 @@ FindCellTypesByMarkers <- function(sobj) {
   )
   
   tmp <- map_dfr(names(biomarkers), function(name) {
-    mm <- FindAllMarkers(sobj,features = biomarkers[[name]] ,logfc.threshold = -10, min.pct = 0.0) 
+    mm <- FindAllMarkers(sobj,features = biomarkers[[name]] ,logfc.threshold = -10, min.pct = 0.0, assay = "RNA") 
     
     if (is_empty(mm)){
       mm <- tibble(pval = 1, 
