@@ -384,7 +384,7 @@ workflow module_2 {
     if (params.module2.downstream_umi.contains("/")) {
 
 	// get UMI matrix from the custom path
-	aggr_filtered_ch = channel.value(file(params.module2.downstream_umi))
+	aggr_filtered_ch = channel.value(["custom",file(params.module2.downstream_umi)])
 	
     } else {
 	
@@ -444,6 +444,11 @@ workflow module_2 {
 	// output: table with 1 column - CB with correct "dashed" cell barcodes
 	// copy it to /module_2_outputs/aggr-user-defined-barcodes.csv
 	// because probably we would like to change it in feature
+
+	// TODO: move the following line to the top level of the Module 2
+	//       which allow to call it only once	         
+	module_2_aggr_csv_ch = module_1_features_ch | module2_create_aggr_config
+	
 	only_required_cellbarcodes = module_2_aggr_csv_ch
 	    .filter{it -> it[0] =~ "${params.module2.users_cellbarcodes}"}
 	
