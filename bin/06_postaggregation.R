@@ -440,6 +440,7 @@ saveUmapDotplotTableIndividual <- function(seurat_obj,
   
   ### Assign predicted cell types labels
   ## get new_labels,old_labels,heatmap_table
+  print("run FindCellTypesByMarkers")
   celltypes_list <- FindCellTypesByMarkers(sobj = seurat_obj)
 
   ## if the user has provided custom labels, use them
@@ -447,7 +448,8 @@ saveUmapDotplotTableIndividual <- function(seurat_obj,
     celltypes_list$new_labels <- user_defined_labels$new_labels
     celltypes_list$old_label <- user_defined_labels$old_labels 
   }
-  
+
+  print("run CreateCellTypesHeatmap")
   celltypes_heatmap <- CreateCellTypesHeatmap(celltypes_list$heatmap_table)
   umap_heatmap_layout <- "
 AAAAA####
@@ -465,7 +467,8 @@ AAAAA####
     gsub("SCT_snn_res.","", .) %>% tail(., n=1)
   
   TITLE <- str_interp("Aggregated. Resolution: ${resolution_text}, min.dist: ${min.dist}, #PCs: ${npcs}, #clusters: ${number_of_clusters} k.param: ${k.param}" )
-  
+
+  print("run combinedUmapTableDotplot")
   all_samples_combined <- combinedUmapTableDotplot(seurat_obj = seurat_obj, 
                                                    TITLE = TITLE, 
                                                    labels_for_umap = celltypes_list,
@@ -477,7 +480,8 @@ AAAAA####
   ###########################################
   #### Plot each batch separately with dotplot
   ###########################################
-  ## https://github.com/satijalab/seurat/issues/1825
+    ## https://github.com/satijalab/seurat/issues/1825
+  print("run combinedUmapTableDotplot for each sample separately")
   ob.list <- SplitObject(seurat_obj, split.by = "batch")
   all_samples_by_sample_id <- lapply(X = names(ob.list), FUN = function(x) {
     celltypes_list <- FindCellTypesByMarkers(sobj = ob.list[[x]])
@@ -610,7 +614,7 @@ FindCellTypesByMarkers <- function(sobj) {
   )
   
   tmp <- map_dfr(names(biomarkers), function(name) {
-    mm <- FindAllMarkers(sobj,features = biomarkers[[name]] ,logfc.threshold = -10, min.pct = 0.0, assay = "RNA") 
+    mm <- FindAllMarkers(sobj,features = biomarkers[[name]] ,logfc.threshold = -10, min.pct = 0.0, assay = "RNA", verbose = F) 
     
     if (is_empty(mm)){
       mm <- tibble(pval = 1, 
@@ -662,6 +666,47 @@ CreateCellTypesHeatmap <- function(df){
           legend.position = "bottom",
           axis.text.x = element_text(color = "black",size = 15),
           axis.text.y = element_text(color = "black", size = 15))
+}
+
+ExportDotplotTables <- function(dotplot_df){
+    
+    ## raw expression without any scaling
+    dt_raw_expression <- dotplot_df %>% 
+        select(gene = features.plot, avg_expression = avg.exp, cluster_id = id) %>% 
+        pivot_wider(names_from = cluster_id,
+                    values_from = avg_expression)
+    
+    ## scaled expression by maximum expression for specific gene 
+    dt_scaled_expression <- dotplot_df %>% 
+        select(gene = features.plot, avg_expression = avg.exp, cluster_id = id) %>% 
+        group_by(gene) %>% 
+        mutate(max_in_col = max(avg_expression),
+               scaled_expression = avg_expression/max_in_col) %>% 
+        ungroup() %>% 
+        select(gene, cluster_id,scaled_expression) %>% 
+        pivot_wider(names_from = cluster_id,
+                    values_from = scaled_expression)
+    
+    ## raw percent of how many cell in cluster expressed specific gene
+    dt_raw_percent_of_cells <- dotplot_df %>% 
+        select(gene = features.plot, pct_cells_expressed = pct.exp, cluster_id = id) %>% 
+        pivot_wider(names_from = cluster_id,
+                    values_from = pct_cells_expressed)
+
+    return(list(
+        list(
+            name = "raw_expression",
+            data = dt_raw_expression
+        ), 
+        list(
+            name = "scaled_expression",
+            data = dt_scaled_expression
+        ),
+        list(
+            name = "percent_of_cells",
+            data = dt_raw_percent_of_cells
+        )
+    ))
 }
 
 
@@ -842,6 +887,7 @@ if (multiple_parameters) {
   ####
   ## individual dotplots
   ####
+  print("Export individual dotplots")
   names(genes_by_groups_wo_default) %>% 
     map(function(name) {
       genes <- genes_by_groups_wo_default[[name]]
@@ -854,6 +900,7 @@ if (multiple_parameters) {
   ####
   ## individual featureplots
   ####
+  print("Export Featureplots")
   DefaultAssay(userdefined_mx_raw) <- "RNA"
   feature_genes_list %>% 
     map(function(gname) {
@@ -862,8 +909,28 @@ if (multiple_parameters) {
     marrangeGrob(nrow = 2, ncol = 2, layout_matrix = matrix(1:4, 2, 2, TRUE)) %>%
     #grid.arrange(grobs = ., ncol = 2, as.table = FALSE) %>% 
     ggsave(filename = "aggr_featureplots.pdf", width = 11, height = 8.5)
-  DefaultAssay(userdefined_mx_raw) <- "SCT"
+  
+  ####
+  ## Export dotplot as tables for all possible dotplot lists
+  ## For all aggregated samples together
+  print("Export DotPlots as tables")
+  names(full_genes_list) %>%
+      map(function(name){
+          genes <- full_genes_list[[name]]
+          ngenes <- length(genes)
+          tmpdtp <-dotplot(userdefined_mx_raw, genes, name)
+          dt_tables <- ExportDotplotTables(tmpdtp$data)
+          walk(dt_tables, function(l) {
+              write_csv(l$data, path = paste0("all_samples_",name,"_",l$name,".csv"), col_names = T)
+          })
+      })
+  
+  ## TODO: export dotplot for each separate sample
+  ## for each sample in all.split.by.sample
+  ##      export 3 tables for sample
+  ####
 
+  DefaultAssay(userdefined_mx_raw) <- "SCT"
   ## save rds
   saveRDS(userdefined_mx_raw, "module2_aggregated_seurat.rds")
   
