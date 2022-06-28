@@ -20,7 +20,7 @@ library(dplyr)
 library(readr)
 
 samples <- read_csv(argv$samples, col_names = T) %>%
-    select(-fastq_prefix,-fastqdir,-chemistry)
+    select(-path_to_r1,-chemistry)
 
 modified_h5 <- read_csv(argv$modified_h5, col_names = F) %>%
     select(sample_id = X1, molecule_h5 = X2)

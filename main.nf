@@ -1,6 +1,20 @@
 #!/usr/bin/env nextflow
 nextflow.enable.dsl=2 
 
+// get prefix and fastqdir from R1 filename
+def vget_prefix(path_to_r1) {
+    
+    prefixes = path_to_r1.collect{it -> {
+	fname = new File(it.toString()).getName()
+	fname[0..fname.indexOf("_S")-1]
+    }}
+
+    fastqdirs = path_to_r1.collect{it -> {
+	new File(it.toString()).parent
+    }}
+    return [prefixes, fastqdirs]
+}
+
 // TODO: check some parameters first
 include { CHECK_DB } from './modules/cellranger_mkref.nf'
 
@@ -14,8 +28,9 @@ samples_reads_ch = Channel
     .groupTuple(by:0)
     .map{it -> [it[0],              //sample_id
 		it[1][0],           //chemistry
-		it[-2].join(","),   //fastq_prefix
-		it[-1].join(",")]}  //fastqdir
+		vget_prefix(it[-1])[0].join(","), // prefixes
+		vget_prefix(it[-1])[1].join(",") // fastqdirs
+	]}
 
 module_1_features_ch = Channel.fromList(['genebody','with-mono'])
 
