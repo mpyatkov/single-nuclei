@@ -15,6 +15,40 @@ def vget_prefix(path_to_r1) {
     return [prefixes, fastqdirs]
 }
 
+// This function is required to filter channel before postprocessing in module_2
+// 1. if downstream_umi == "auto" && users_cellbarcodes == "genebody" or "with-mono" --> 1 tuple [id_umi, path_mx, id_cb, path_cb]
+//     The idea to use the same cellbarcodes as well as matrix (genebody mx + genebody cb, with-mono mx + with-mono cb)
+// 2. if downstream_umi == "auto" && users_cellbarcodes == "custom" --> 2 tuples [[id_umi, path_mx, id_cb, path_cb], [..]]
+//     for each genebody and with-mono UMI matrices. The idea is if we have custom cellbarcodes it is not clear which matrix to use for analysis,
+//     so I decided to use both.
+// 3. if downstream_umi == "custom" && users_cellbarcodes == "genebody" or "with-mono" --> 1 tuple [id_umi, path_mx, id_cb, path_cb]
+// 4. if downstream_umi == "custom" && users_cellbarcodes == "custom" --> 1 tuple [id_umi, path_mx, id_cb, path_cb]
+def filter_function(id_umi, path_mx, id_cb, path_cb) {
+
+    if (params.module2.downstream_umi== "auto" && params.module2.users_cellbarcodes == "auto") {
+	// println("auto & auto")
+	
+	id_umi == id_cb
+    }
+
+    else if (params.module2.users_cellbarcodes != "auto" && id_cb != "custom" & params.module2.users_cellbarcodes != "auto" && id_cb != "custom" ) {
+	id_umi =~ params.module2.downstream_umi && id_cb =~ params.module2.users_cellbarcodes
+    }
+	
+    else if (params.module2.downstream_umi != "auto" && id_umi != "custom") {
+	// println("1 - ${params.module2.downstream_umi} & ${params.module2.downstream_umi} = ${id_umi}")
+	id_umi =~ params.module2.downstream_umi
+    }
+    else if (params.module2.users_cellbarcodes != "auto" && id_cb != "custom" ) {
+	// println("2 - ${params.module2.downstream_umi} & ${params.module2.downstream_umi}")
+	id_cb =~ params.module2.users_cellbarcodes
+    }
+    else {
+	// println("Other")
+	true
+    }
+}
+
 // TODO: check some parameters first
 include { CHECK_DB } from './modules/cellranger_mkref.nf'
 
@@ -24,6 +58,7 @@ samples_ch = channel.value(file(params.module1.samples_general))
 // channel with samples reads (sample_id, fastqdir)
 samples_reads_ch = Channel
     .fromPath(params.module1.samples_general)
+    .ifEmpty{exit 1, "Cannot find ${params.module1.samples_general} configuration file"}
     .splitCsv(skip:1)
     .groupTuple(by:0)
     .map{it -> [it[0],              //sample_id
@@ -36,6 +71,7 @@ module_1_features_ch = Channel.fromList(['genebody','with-mono'])
 
 userdefined_params = Channel
     .fromPath(params.module1.sample_options)
+    .ifEmpty{exit 1, "Cannot find ${params.module1.sample_options} configuration file"}
     .splitCsv(skip: 1)
     .combine(module_1_features_ch)
 
@@ -341,6 +377,7 @@ workflow module2_create_aggr_config {
     main:
     modified_h5 = downstream_umi
 	.combine(channel.fromPath("${params.output_dir}/corrected_h5/**molecule_info.h5"))
+	.ifEmpty{exit 1, "Cannot find any molecule_info.h5 files in the output directory"}
 	.filter{it -> it[1] =~ it[0] }
 	.groupTuple(by:0)
 	.map{it -> [it[0],
@@ -396,30 +433,19 @@ workflow module_2 {
     
     // if UMI matrix does not exist try to aggregate samples first
     def aggr_filtered_ch = null
-    if (params.module2.downstream_umi.contains("/")) {
+    // if downstream_umi OR aggregation_config
+    // make "custom" output for postprocessing
+    // if both option is "custom" then priority to matrix
+    if (params.module2.downstream_umi.contains("/") || params.module2.aggregation_config.contains("/")) {
 
-	// get UMI matrix from the custom path
-	aggr_filtered_ch = channel.value(["custom",file(params.module2.downstream_umi)])
-	
-    } else {
-	
-	// Aggregate for two features [genebody,with-mono], aggregation_config == "auto"
-	// OR
-	// Aggregate for custom aggregated.csv file, aggregation_config = "/custom/path/to/aggregation.csv"
-	// for "auto" it will be created two directories ../aggregation/[genebody,with-mono] with UMI matrices
-	// for custom path just one output directory ../aggregation/[custom]
-
-	if (params.module2.aggregation_config == "auto") {
-	    // get channel with two aggregation.csv configs paths [feature_name, path]
-	    module_2_aggr_csv_ch = module_1_features_ch | module2_create_aggr_config
-	    module_2_aggr_csv_ch | cellranger_aggregate
-
-	    // just return path to one UMI matrix which specified in "downstream_umi" parameter
-	    aggr_filtered_ch = cellranger_aggregate.out.filtered_matrix
-		.filter{feature,path -> feature =~ params.module2.downstream_umi}
-		.map{it -> it}
-	    
+	if (params.module2.downstream_umi.contains("/")) {
+	    // get UMI matrix from the custom path
+	    aggr_filtered_ch = channel.value(["custom",file(params.module2.downstream_umi)])
 	} else {
+	    // Aggregate for custom aggregated.csv file, aggregation_config = "/custom/path/to/aggregation.csv"
+	    // for "auto" it will be created two directories ../aggregation/[genebody,with-mono] with UMI matrices
+	    // for custom path just one output directory ../aggregation/[custom]
+	    
 	    // make channel ["custom", /path/to/aggregation.csv]
 	    module_2_aggr_csv_ch = channel.value("custom").combine(channel.value(params.module2.aggregation_config))
 	    module_2_aggr_csv_ch | cellranger_aggregate
@@ -428,13 +454,27 @@ workflow module_2 {
 	    aggr_filtered_ch = cellranger_aggregate.out.filtered_matrix
 	}
 	
+    } else {
+	// Aggregate for two features [genebody,with-mono], aggregation_config == "auto"
+	// creates two subdirectories inside "aggregation" and "postprocessing" subdirs
+	
+	// get channel with two aggregation.csv configs paths [feature_name, path]
+	module_2_aggr_csv_ch = module_1_features_ch | module2_create_aggr_config 
+	module_2_aggr_csv_ch | cellranger_aggregate
+
+	// just return path to one UMI matrix which specified in "downstream_umi" parameter
+	aggr_filtered_ch = cellranger_aggregate.out.filtered_matrix
+	// TODO: use the following option if we would like to compute only one matrix
+	// .filter{feature,path -> feature =~ params.module2.downstream_umi}
+	    .map{it -> it}
     }
     
     // preparing cell barcodes
     def user_barcodes_ch = null
     if (params.module2.users_cellbarcodes.contains("/")) {
 	// if user has already prepared file with cell barcodes
-	user_barcodes_ch = channel.value(file(params.module2.users_cellbarcodes))
+	user_barcodes_ch = channel.value("custom").combine(channel.value(file(params.module2.users_cellbarcodes)))
+	// user_barcodes_ch = channel.value("custom").combine(user_barcodes_ch)
     } else {
 	// If the user does not have custom cell barcodes, they must be extracted from Module 1.
 	// Problem: After the aggregation, all samples provided in
@@ -445,43 +485,67 @@ workflow module_2 {
 	//     G183M4 --> cellbarcodes-3
 	//  it ^^^^^^ supposed that we can remove some lines from aggregation.csv
 	// (removing low quality samples), that means we should reorder
-	// 'dashes' (-1,-2,... for each sample) in user defined meta files
-	// to associate cellbarcodes in the correct order
+	// 'dashes' (-1,-2,... for each sample) in the user defined meta files
+	// to set the correct order for the cellbarcodes
 
 	// create temporary file with all paths to individual user-defined meta files
-	module_2_meta_ch = channel.fromPath("${params.output_dir}/module_1_outputs/${params.module2.users_cellbarcodes}/**user-defined_cloupe*.csv")
-	    .map{it -> it.toString()}
-	    .collectFile(name: 'samples_path.csv', newLine: true)//.view{it -> it.text}
+	// module_2_meta_ch = channel.fromPath("${params.output_dir}/module_1_outputs/${params.module2.users_cellbarcodes}/**user-defined_cloupe*.csv")
+	//     .ifEmpty{exit 1, "Cannot find any user-defined meta data in the default 'module_1_outputs' location. Need to restart module_1 to get cellbarcodes for each sample individualy"}
+	//     .map{it -> it.toString()}
+	//     .collectFile(name: 'samples_path.csv', newLine: true)//.view{it -> it.text}
 
+	module_2_meta_ch1 = module_1_features_ch.combine(channel.fromPath("${params.output_dir}/module_1_outputs/**user-defined_cloupe*.csv"))
+	    .ifEmpty{exit 1, "Cannot find any user-defined meta data in the default 'module_1_outputs' location. Need to restart module_1 to get cellbarcodes for each sample individualy"}
+	    .filter{feature,path -> path =~ feature}
+	    .groupTuple(by:0)
+	    .map{feature, list -> [feature, list.sort().join("\n")]}
+	// .collectFile () {feature,paths -> ["${feature}", paths + '\n']}
+	    .collectFile(newLine: true)
+	    .map{it -> [it.getName(), it]}
+		
 	// Combine all files with user-defined meta data to one file
 	// and choose only cellbarcodes from samples which have only been
 	// presented in aggregation.csv, changing 'dash' to correct one.
 	// output: table with 1 column - CB with correct "dashed" cell barcodes
-	// copy it to /module_2_outputs/aggr-user-defined-barcodes.csv
+	// copy it to /module_2_outputs/temporary_configs/aggr-user-defined-barcodes.csv
 	// because probably we would like to change it in feature
 
-	// TODO: move the following line to the top level of the Module 2
-	//       which allow to call it only once	         
+	// For "genebody" and "with-mono" create aggregation files which
 	module_2_aggr_csv_ch = module_1_features_ch | module2_create_aggr_config
-	
-	only_required_cellbarcodes = module_2_aggr_csv_ch
-	    .filter{it -> it[0] =~ "${params.module2.users_cellbarcodes}"}
-	
-	get_user_defined_cellbarcodes(only_required_cellbarcodes, module_2_meta_ch)
 
+	mix_aggr_usercb = module_2_aggr_csv_ch.join(module_2_meta_ch1)
+	
+	// only_required_cellbarcodes = module_2_aggr_csv_ch
+	//     .filter{it -> it[0] =~ "${params.module2.users_cellbarcodes}"}
+	
+	// get_user_defined_cellbarcodes(only_required_cellbarcodes, module_2_meta_ch)
+	user_barcodes_ch  = mix_aggr_usercb
+	    // .filter{it -> it[0] =~ "${params.module2.users_cellbarcodes}"}
+	| get_user_defined_cellbarcodes
+	
 	// userdefined barcodes which were collected from individual
 	// samples barcodes and sliced by userdefined parameters (see configuration/sample_options.csv)
-	user_barcodes_ch = get_user_defined_cellbarcodes.out.user_cellbarcodes
+	// user_barcodes_ch = channel.value("${params.module2.users_cellbarcodes}").combine(get_user_defined_cellbarcodes.out.user_cellbarcodes)
     }
 
-    // // JUST FOR TEST
-    // aggr_filtered_ch | view
-    // module_2_aggr_csv_ch | view
-    // user_barcodes_ch | view
+    // the following channel can contain:
+    // 1. if downstream_umi == "auto" && users_cellbarcodes == "genebody" or "with-mono" --> 1 tuple [id_umi, path_mx, id_cb, path_cb]
+    //     The idea to use the same cellbarcodes as well as matrix (genebody mx + genebody cb, with-mono mx + with-mono cb)
+    // 2. if downstream_umi == "auto" && users_cellbarcodes == "custom" --> 2 tuples [[id_umi, path_mx, id_cb, path_cb], [..]]
+    //     for each genebody and with-mono UMI matrices. The idea is if we have custom cellbarcodes it is not clear which matrix to use for analysis,
+    //     so I decided to use both.
+    // 3. if downstream_umi == "custom" && users_cellbarcodes == "genebody" or "with-mono" --> 1 tuple [id_umi, path_mx, id_cb, path_cb]
+    // 4. if downstream_umi == "custom" && users_cellbarcodes == "custom" --> 1 tuple [id_umi, path_mx, id_cb, path_cb]
+    mx_cb_channel = aggr_filtered_ch.combine(user_barcodes_ch)
+	.filter{id_umi, path_mx, id_cb, path_cb -> filter_function(id_umi, path_mx, id_cb, path_cb)}.view()
     
+// if (params.module2.downstream_umi== "auto" && params.module2.users_cellbarcodes == "auto") {
+// 		id_umi == id_cb} else {true}
+
+    // id_cb == "custom" || id_umi == "custom"}.view()
     // postprocessing using matrix with the filtered barcodes and table with user
     // defined barcodes
-    aggregation_postprocessing(aggr_filtered_ch, user_barcodes_ch)
+    mx_cb_channel | aggregation_postprocessing
 }
 
 process cellranger_aggregate {
@@ -490,7 +554,7 @@ process cellranger_aggregate {
     cpus 16
     // penv 'smp'
     memory '64 GB'
-
+    
     time '24h'
     beforeScript 'source $HOME/.bashrc; module load bcl2fastq/2.20; module load cellranger/6.0.1'
 
@@ -540,11 +604,11 @@ process get_user_defined_cellbarcodes {
     publishDir path: "${params.module2.temporary_configs}", mode: "copy", pattern: "*.csv", overwrite: true
     
     input:
-    tuple val(downstream_umi), path(aggr_file)
-    path(userdefined_paths)
+    tuple val(downstream_umi), path(aggr_file), path(userdefined_paths)
+    
     
     output:
-    path("${downstream_umi}_aggr-user-defined-barcodes.csv"), emit: user_cellbarcodes
+    tuple val(downstream_umi), path("${downstream_umi}_aggr-user-defined-barcodes.csv"), emit: user_cellbarcodes
 
     // when:
     // !userdefined_paths.exists() | params.module2.recalculate_cellbarcodes
@@ -559,20 +623,21 @@ process get_user_defined_cellbarcodes {
 
 process aggregation_postprocessing {
 
-    tag "aggr_postprocessing"
+    tag "${downstream_umi_id}-MX_${cb_id}-CB"
     beforeScript 'source $HOME/.bashrc; module load miniconda'
     conda '/projectnb2/wax-es/routines/condaenv/rlang4'
     
     cpus 8
     memory '64 GB'
 
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi}/plots", mode: "copy", pattern: "*.pdf", overwrite: true
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi}/data", mode: "copy", pattern: "*.csv", overwrite: true
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi}/rds", mode: "copy", pattern: "*.rds", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/plots", mode: "copy", pattern: "*.pdf", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/data", mode: "copy", pattern: "*.csv", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/rds", mode: "copy", pattern: "*.rds", overwrite: true
     
     input:
-    tuple val(downstream_umi), val(filtered_mx)
-    val(barcodes_mx)
+    // tuple val(downstream_umi_id), val(filtered_mx)
+    // val(barcodes_mx)
+    tuple val(downstream_umi_id), val(filtered_mx), val(cb_id), val(barcodes_mx)
     
     output:
     path("*.pdf")

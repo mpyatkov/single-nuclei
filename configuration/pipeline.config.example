@@ -76,26 +76,46 @@ params {
 	// the former is full path to previously calculated aggregation matrix 
 
 	// aggregation_config - configuration file with all information
-	// about which molecule_info.h5 files should be aggregated
+	// about which molecule_info.h5 files should be aggregated.
+	// If aggregation_config and downstream_umi both equal to custom file
+	// then priority for downstream_umi.
 	// Options:
 	// 1. 'auto' - means collect molecule_info.h5 files for "genebody"
-	//          and "intronic-mono-exonic" features separately in two
-	//          aggregation.csv files. Create for each two separate UMI matrices.
+	//          and "intronic-mono-exonic" directories separately in two
+	//          aggregation.csv files. The output is two separate UMI matrices.
 	// 2. custom path to configuration aggregation.csv file
-	
 	aggregation_config = 'auto'
 	
 	// ----------
-	// downstream_umi = '/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggregation.pop2/with-mono/filtered_feature_bc_matrix.h5'
-	downstream_umi = 'genebody'
-	// users_cellbarcodes = '/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggr-user-defined-barcodes.csv'
-	
-	// downstream_umi = '/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggregation/genebody/filtered_feature_bc_matrix.h5'
-	// users_cellbarcodes = '/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggr-user-defined-barcodes.csv'
-	// downstream_umi = "with-mono"
-	users_cellbarcodes = "with-mono"
+	// downstream_umi - aggregated matrix which we are going to
+	//                   use for downstream analysis
+	// Options:
+	// downstream_umi = "auto" - use two matrices "genebody" and "with-mono" simultaneously,
+	//                   creates two separate directories for postprocessing
+	// downstream_umi = "genebody" or downstream_umi = "with-mono" use only one matrix
+	// downstream_umi = /path/to/matrix.h5 - use custom matrix 
+	downstream_umi = "auto"
+
 	// ----------
+	// users_cellbarcodes --> "with-mono","genebody", custom path
+	// users_cellbarcodes = "auto"
+	// users_cellbarcodes - collects information about user-definded cellbarcodes.
+	// user-defined-cellbarcodes - barcodes after applying
+	//                  multiple filters in module_1 (ex: slope, intercept, MT%, ...)
+	// Options:
+	// 
+	// users_cellbarcodes = "auto" - collect information about
+	//                      cellbarcodes for two counting methods "genebody" and
+	//                      "with-mono" simultaneously and use both of them.
+	// users_cellbarcodes = "genebody" OR users_cellbarcodes = "with-mono" - collect info only about specific
+	//                               counting methods
+	// users_cellbarcodes = "/path/to/cellbarcodes.csv" - use custom cellbarcodes table
+
+	// users_cellbarcodes = "/projectnb2/wax-dk/max/SCexp/G190_FULL/output/module_2_outputs/aggr-user-defined-barcodes.csv.withmono"
+	users_cellbarcodes = "auto"
 	
+	// ----------
+	// DEPRECATED: NEED TO REMOVE AFTER REVISING
 	// By default pipeline will recalculate cellbarcodes by
         // collecting all user-defined cellbarcodes for each separate sample from
 	// module1 directories to file: "../output/module_2_outputs/aggr-user-defined-barcodes.csv"
@@ -111,17 +131,34 @@ params {
 
 	// Cluster labels for UMAP cluster (by default = 0,1,2,3,...)
 	seurat_cluster_labels = 'configuration/seurat_cluster_labels.csv'
-
+	
 	// Show labels for UMAP plots
 	labels_for_umap = "Y"
 
-	// Default number of clusters on UMAP plot (should be quoted)
+	// Default number of clusters for UMAP plots (should be quoted)
+	// if umap_resolution="auto" then use binary search to find exact
+	//   number of clusters
+	// options: single value OR comma separated list of values "8,9,10,11"
 	seurat_nclusters = "8"
+
+	// Parameter for Seurat RunUMAP
+	// options: single value OR comma separated list of values "0.001,0.01,0.1"
 	umap_min_dist="0.001"
+
+	// Parameter for Seurat RunPCA
+	// options: single value OR comma separated list of values "6,8,10,12,15"
         umap_npcs="8"
+
+	// Parameter for Seurat FindNeighbors
+	// options: single value OR comma separated list of values "20,30,40"
         umap_kparam="20"
+
+	// set resolution for Seurat FindClusters procedure. Options:
+	//   "auto" - use binary search to find exact number of "seurat_nclusters"
+	//   "0.25" - overrides "seurat_nclusters" and uses specific resolution
+	//   "0.25,0.3,0.4" - overrides "seurat_nclusters" and uses
+        //      specific resolution for multiple plots
         umap_resolution="auto"
-	//umap_resolution="0.125"
 
 	// MT percent (additional adjustments for MT percent. To get
 	// the effect, this parameter must be less than the mt_percent
@@ -135,4 +172,62 @@ params {
 	// number of molecules detected within each cell
 	min_counts = 400
     }
+
+    module3 {
+	// User can specify which RDS file to use for downstream analysis
+	// using the following options:
+	// 1. custom path to RDS file
+	// 2. "last" - use the most recent file
+	// 3. "code" - when user start the module 3 it shows all available RDS files.
+	//	       User can use full path OR short 4 symbols length code here.
+        //             Code is just md5 sum of the full path to RDS file.
+	// Examples:
+	// rds_input = "/custom/path/to/rds/file.rds" 
+	// rds_input = "c9bd"
+	// rds_input = "last"
+	rds_input = "c9bd"
+
+	// Extraction/Combining configuration file
+	extract_combine_config="./path/to/file"
+
+	// Rewrite output RDS OR just add time stamps at the end
+	// !nextflow parameter
+	rewrite_rds = "TRUE"
+
+	// Reclustering of extracted cellbarcodes using SCTransform
+	// "TRUE" / "FALSE"
+	// if recluster_after_extraction equal to "TRUE", then use the
+	// following parameters to specify the number of clusters for a
+	// new UMAP configuration
+	// (for puprose of simplicity user can make adjustments only in
+	// two parameters which are directly related to number of
+	// clusters)
+	recluster_after_extraction = "TRUE"
+
+	// Parameter for Seurat RunUMAP
+	// options: single value OR comma separated list of values "0.001,0.01,0.1"
+	umap_min_dist="0.001"
+
+	// Parameter for Seurat RunPCA
+	// options: single value OR comma separated list of values "6,8,10,12,15"
+        umap_npcs="8"
+
+	// fixed parameters for umap plots are:
+	// umap_kparam="20"
+	
+	// Default number of clusters for UMAP plots (should be quoted)
+	// if umap_resolution="auto" then use binary search to find exact
+	//    number of clusters
+	// options: single value OR comma separated list of values like "8,9,10,11"
+	seurat_nclusters = "5" // will not work if umap_resolution not "auto"
+
+	// set resolution for Seurat FindClusters procedure. Options:
+	//   "auto" - use binary search to find exact number of "seurat_nclusters"
+	//   "0.25" - overrides "seurat_nclusters" and uses specific resolution
+	//   "0.25,0.3,0.4" - OVERRIDES "seurat_nclusters" option and uses
+        //                    specific resolution for multiple plots
+        umap_resolution="0.3"
+    }
+
+    
 }
