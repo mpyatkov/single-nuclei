@@ -549,6 +549,7 @@ workflow module_2 {
 }
 
 process cellranger_aggregate {
+    tag "${downstream_umi}"
     // cache false // for test only
     // echo true
     cpus 16
@@ -673,6 +674,120 @@ process aggregation_postprocessing {
     fi
     """
 
+    stub:
+    """
+    touch stub_aggr_umap.pdf
+    touch stub.rds
+    touch stub_data.csv
+    """
+}
+
+// MODULE_3 (Extraction/Combining clusters, DEG analysis TEST)
+workflow test_module3 {
+
+    // LOGIC:
+    // + if we have custom path then use it
+    // + if we have only one RDS show it and use it if the code == "last"
+    // + if we have multiple RDS show all of them and by default use the recent one if the code == "last"
+    // + provide the md5 codes for users to make the selection easy
+    
+    downstream_rds = null
+    // use custom path
+    if (params.module3.rds_input.contains("/")) {
+	
+	downstream_rds = channel.value(params.module3.rds_input)
+	    .view{"Selected custom RDS file for Module 3 downstream analysis:"}
+	    .view()
+	
+    } else {
+	// check how many rds we have
+	
+	log.info("You have the following RDS files:")
+	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds")
+	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/rds/**.rds"))
+	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 3"}
+	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
+	    .view{it->it[0..1].join(" -- ")}
+	    .toSortedList{a,b -> b[2] <=> a[2]}
+
+	// use the recent one
+	if (params.module3.rds_input == "last") {
+	    downstream_rds = all
+		.view{"The most recent one which will be used for Module 3 downstream analysis is:"}
+		.map{it -> it[0][1]} // path of rds file
+		.view()
+	}
+	// use the md5 code 
+	else {
+	    downstream_rds = all
+		.flatMap()
+		.filter{id, path, date -> id == params.module3.rds_input}
+		.ifEmpty{exit 1, "Cannot find any RDS using the following code: '${params.module3.rds_input}'"}
+		.view{"Will be used the following RDS file for Module 3 downstream analysis ('${params.module3.rds_input})':"}
+		.map{it -> it[1]}
+		.view()
+	}
+
+    }
+
+    downstream_rds | combine_extract
+}
+
+
+process combine_extract {
+
+    tag "${downstream_umi_id}-MX_${cb_id}-CB"
+    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    conda '/projectnb2/wax-es/routines/condaenv/rlang4'
+    
+    cpus 8
+    memory '64 GB'
+
+    publishDir path: "${params.output_dir}/module_3_outputs/extract_combine/rds/", mode: "copy", pattern: "*.rds", overwrite: true
+    publishDir path: "${params.output_dir}/module_3_outputs/extract_combine/pdf/", mode: "copy", pattern: "*.pdf", overwrite: true
+    // publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/data", mode: "copy", pattern: "*.csv", overwrite: true
+    
+    input:
+    path(rds)
+    
+    output:
+    path("*.pdf")
+    path("*.rds"), optional: true
+    // path("*.csv"), optional: true
+    
+
+    script:
+    // if rewrite_rds == T
+    //TODO: add timecode here
+    output_rds = "output.rds"
+    
+    """
+    cp ${projectDir}/bin/UmapPlot.R ./
+
+    07_extraction_combining.R \
+	--input_rds ${rds}\
+	--extract_combine_config ${projectDir}/${params.module3.extract_combine_config} \
+	--recluster ${params.module3.recluster_after_extraction} \
+	--nclusters ${params.module3.seurat_nclusters} \
+	--umap_resolution ${params.module3.umap_resolution} \
+        --umap_min_dist ${params.module3.umap_min_dist}\
+        --umap_npcs ${params.module3.umap_npcs} \
+	--number_of_cores 4 \
+	--output_rds ${output_rds}
+
+    ## --number_of_cores ${task.cpus} 
+    
+    ## TODO: replace SCC installed imagemagick to conda
+    ## for range of parameters (like --nclusters "6,7,8") represent all plots as 
+    ## combined tiled plot
+
+    if [[ -n \$(find . -name "*_aggr*pdf") ]]; then
+       montage -geometry +0+0 -density 150 -tile 2x2 \$(find . -name "*_aggr*pdf" | sort -n | paste -s -d ' ') combined_plot.pdf
+
+       rm -rf *_aggr*pdf
+    fi
+    """
+    
     stub:
     """
     touch stub_aggr_umap.pdf

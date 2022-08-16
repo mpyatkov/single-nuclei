@@ -185,10 +185,10 @@ params {
 	// rds_input = "/custom/path/to/rds/file.rds" 
 	// rds_input = "c9bd"
 	// rds_input = "last"
-	rds_input = "c9bd"
+	rds_input = "a8b5"
 
 	// Extraction/Combining configuration file
-	extract_combine_config="./path/to/file"
+	extract_combine_config="configuration/combine_extract_config.csv"
 
 	// Rewrite output RDS OR just add time stamps at the end
 	// !nextflow parameter
@@ -219,14 +219,14 @@ params {
 	// if umap_resolution="auto" then use binary search to find exact
 	//    number of clusters
 	// options: single value OR comma separated list of values like "8,9,10,11"
-	seurat_nclusters = "5" // will not work if umap_resolution not "auto"
+	seurat_nclusters = "3" // will not work if umap_resolution is NOT "auto"
 
 	// set resolution for Seurat FindClusters procedure. Options:
 	//   "auto" - use binary search to find exact number of "seurat_nclusters"
 	//   "0.25" - overrides "seurat_nclusters" and uses specific resolution
 	//   "0.25,0.3,0.4" - OVERRIDES "seurat_nclusters" option and uses
         //                    specific resolution for multiple plots
-        umap_resolution="0.3"
+        umap_resolution="auto"
     }
 
     
