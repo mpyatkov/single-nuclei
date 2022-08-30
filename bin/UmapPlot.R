@@ -416,3 +416,18 @@ recalc_umap_2 <- function(seurat_obj, npcs = 8, min.dist = 0.001, number_of_clus
   seurat_obj
 }
 
+mp_plot_samples <- function(hep_seurat, sorted_genes, samples.list1, title) {
+  #cols <- c("white", "#F7EEF7","#E5CCFF", "red3","red4") ## red palette
+  cols <- rev(c("#225ea8","#2171b5","#6baed6","#eff3ff","#fbb4b9","#fbb4b9"))# blue,red colors
+  
+  p1 <- wrap_elements(mp_dotplot(hep_seurat, sorted_genes, title = "ALL") + scale_colour_gradientn(colors = cols))
+  
+  p2 <- map(names(samples.list1), function (name) {
+    wrap_elements(mp_dotplot(samples.list1[[name]], sorted_genes, title = name) + scale_colour_gradientn(colors = cols))
+  }) %>% reduce(`/`)
+  
+  p3 <- wrap_elements(p1/p2+plot_layout(heights = c(1,4)))&
+    plot_annotation(title = title, 
+                    theme = theme(plot.title = element_text(size = 18)))
+  p3
+}

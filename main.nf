@@ -682,7 +682,7 @@ process aggregation_postprocessing {
     """
 }
 
-// MODULE_3 (Extraction/Combining clusters, DEG analysis TEST)
+// MODULE_3 (Extraction/Combining clusters)
 workflow test_module3 {
 
     // LOGIC:
@@ -704,7 +704,7 @@ workflow test_module3 {
 	
 	log.info("You have the following RDS files:")
 	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds")
-	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/rds/**.rds"))
+	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
 	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 3"}
 	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
 	    .view{it->it[0..1].join(" -- ")}
@@ -794,4 +794,136 @@ process combine_extract {
     touch stub.rds
     touch stub_data.csv
     """
+}
+
+// MODULE_4 (DE analysis)
+workflow test_module4 {
+    // LOGIC:
+    // + if we have custom path then use it
+    // + if we have only one RDS show it and use it if the code == "last"
+    // + if we have multiple RDS show all of them and by default use the recent one if the code == "last"
+    // + provide the md5 codes for users to make the selection easy
+    
+    downstream_rds = null
+    // use custom path
+    if (params.module4.rds_input.contains("/")) {
+	
+	downstream_rds = channel.value(params.module4.rds_input)
+	    .view{"Selected custom RDS file for Module 3 downstream analysis:"}
+	    .view()
+	
+    } else {
+	// check how many rds we have
+	
+	log.info("You have the following RDS files:")
+	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds")
+	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
+	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 3"}
+	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
+	    .view{it->it[0..1].join(" -- ")}
+	    .toSortedList{a,b -> b[2] <=> a[2]}
+
+	// use the recent one
+	if (params.module4.rds_input == "last") {
+	    downstream_rds = all
+		.view{"The most recent one which will be used for Module 4 downstream analysis is:"}
+		.map{it -> it[0][1]} // path of rds file
+		.view()
+	}
+	// use the md5 code 
+	else {
+	    downstream_rds = all
+		.flatMap()
+		.filter{id, path, date -> id == params.module4.rds_input}
+		.ifEmpty{exit 1, "Cannot find any RDS using the following code: '${params.module4.rds_input}'"}
+		.view{"Will be used the following RDS file for Module 3 downstream analysis ('${params.module4.rds_input})':"}
+		.map{it -> it[1]}
+		.view()
+	}
+
+    }
+
+    downstream_rds | calculate_deg
+}
+
+process calculate_deg {
+    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    conda '/projectnb2/wax-es/routines/condaenv/rlang4'
+    
+    cpus 8
+    memory '64 GB'
+    // executor 'local'
+    
+    publishDir path: "${params.output_dir}/module_4_outputs/de_analysis/data/", mode: "copy", pattern: "*.tsv", overwrite: true
+    publishDir path: "${params.output_dir}/module_4_outputs/de_analysis/pdf/", mode: "copy", pattern: "*.pdf", overwrite: true
+        
+    input:
+    path(rds)
+    
+    output:
+    path("*.tsv")
+    path("*.pdf")
+
+    script:
+    
+    """
+    cp ${projectDir}/bin/UmapPlot.R ./
+
+    08_DE_analysis.R \
+	--input_rds ${rds}\
+	--de_config ${projectDir}/${params.module4.de_config}
+    """
+    
+    stub:
+    """
+    touch stub_de_analysis.pdf
+    touch stub_data.tsv
+    """
+}
+
+def pprintRds(rds_map){
+
+    // Log colors ANSI codes
+    params.monochrome_logs = false
+    c_reset = params.monochrome_logs ? '' : "\033[0m";
+    c_dim = params.monochrome_logs ? '' : "\033[2m";
+    c_black = params.monochrome_logs ? '' : "\033[0;30m";
+    c_green = params.monochrome_logs ? '' : "\033[0;32m";
+    c_yellow = params.monochrome_logs ? '' : "\033[0;33m";
+    c_blue = params.monochrome_logs ? '' : "\033[0;34m";
+    c_purple = params.monochrome_logs ? '' : "\033[0;35m";
+    c_cyan = params.monochrome_logs ? '' : "\033[0;36m";
+    c_white = params.monochrome_logs ? '' : "\033[0;37m";
+
+    def res = rds_map.collect { key,path -> "${c_yellow}${key} ${c_reset}-- ${path}" }.join("\n")
+    return res.stripIndent()+"\n"
+
+}
+
+workflow show_parameters {
+
+    c_yellow = "\033[0;33m"
+    c_reset = "\033[0m"
+
+    log.info "\n  SYSTEM PARAMETERS:"
+    log.info "    ${c_yellow}CURRENT MODULE: ${c_reset}${params.current_module.toUpperCase()}"
+    log.info "    ${c_yellow}SCC_PROJECT: ${c_reset}${params.scc_project}"
+    log.info "    ${c_yellow}OUTPUT_DIR: ${c_reset}${params.output_dir}"
+
+    log.info "\n  MODULE PARAMETERS:"
+    params[params.current_module].each {key, value ->
+	log.info "    ${c_yellow}${key}: ${c_reset}${value}"
+    }
+    log.info("\n")
+    
+    if (params.current_module.contains("module3") || params.current_module.contains("module4")) {
+	log.info("You have the following RDS files:")
+	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds")
+	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
+	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 3"}
+	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
+	    .toSortedList{a,b -> b[2] <=> a[2]}
+	    .collect{it->it.collectEntries{l-> [l[0],l[1]]}}
+	    .view{it->pprintRds(it[0])}
+    }
 }
