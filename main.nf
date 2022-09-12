@@ -76,7 +76,7 @@ userdefined_params = Channel
     .combine(module_1_features_ch)
 
 // MODULE 1
-workflow module_1 {
+workflow module1 {
     
     // GET index or create if it is not created before and put it to
     // the storeDir for permanent storing
@@ -423,7 +423,7 @@ process create_aggregation_file {
 
 // MODULE 2
 
-workflow module_2 {
+workflow module2 {
 
     // here I am using aggregation.csv from the output directory, because
     // this file may have been edited, so the version from the working
@@ -683,7 +683,7 @@ process aggregation_postprocessing {
 }
 
 // MODULE_3 (Extraction/Combining clusters)
-workflow test_module3 {
+workflow module3 {
 
     // LOGIC:
     // + if we have custom path then use it
@@ -797,7 +797,7 @@ process combine_extract {
 }
 
 // MODULE_4 (DE analysis)
-workflow test_module4 {
+workflow module4 {
     // LOGIC:
     // + if we have custom path then use it
     // + if we have only one RDS show it and use it if the code == "last"
