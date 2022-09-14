@@ -15,7 +15,18 @@ ParseArguments <- function() {
     return(parse_args(p))
 }
 
+
 argv <- ParseArguments()
+
+# DEBUG <- TRUE
+# if (DEBUG){
+#   argv$input_rds <- "/projectnb2/wax-dk/max/SCexp/G190_3samples/output/module_1_outputs/rds/G190M2_output_rds.rds"
+#   argv$user_slope <- 1
+#   argv$user_intercept <- 0
+#   argv$user_mt_percent <- 10
+#   argv$user_population <- 1
+# }
+
 
 library(gridExtra)
 library(grid)
@@ -1344,6 +1355,7 @@ user_seurat <- recalculate_seurat_object(downstream_seurat,
                                          USER_DEFINED)
 ## mark doublets
 user_seurat <- seurat_mark_doublets(user_seurat)
+
 ## remove doublets
 user_seurat_singlets_only <- seurat_remove_doublets(user_seurat, USER_DEFINED)
 
@@ -1366,10 +1378,11 @@ all_cb_projections <- as_tibble(all_cb_seurat@reductions$umap@cell.embeddings, r
     rename("UMAP_1" = "proj_x_all", "UMAP_2" = "proj_y_all")
 
 only_filtered <- only_filtered %>% 
-    left_join(., all_cb_metadata_df, by = "CB") %>% 
-    left_join(., all_cb_projections, by = "CB") %>% 
-    left_join(., user_cb_metadata_df, by = "CB") %>%
-    replace_na(list(user_selected_parameters = "exclude"))
+  left_join(., all_cb_metadata_df, by = "CB") %>% 
+  left_join(., all_cb_projections, by = "CB") %>% 
+  left_join(., user_cb_metadata_df, by = "CB") %>%
+  left_join(., user_seurat@meta.data %>% select(CB, dblfinder), by = "CB") %>% 
+  replace_na(list(user_selected_parameters = "exclude"))
 
 export_meta_data(only_filtered, argv$sample_id)
 
