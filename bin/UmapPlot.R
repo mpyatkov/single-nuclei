@@ -183,10 +183,10 @@ UmapDotplotTableHeatmapPlot <- function(seurat_obj,
   clusters_stats_table_plot <- mp_plot_table(list_sample_cluster_stats(seurat_obj)[[sample_id]], title = "")
   
   layout <- "
-    AAAAC
-    AAAAC
-    AAAAC
-    BBBBB
+    AAAA#C
+    AAAA#C
+    AAAA#C
+    BBBBBB
     "
   all_samples_combined <- cowplot::plot_grid((aggr_umap_all_clusters+theme(plot.margin=margin(0,1,0,0,"cm")))+
                                                 aggr_umap_all_clusters_dotplot+
@@ -292,7 +292,9 @@ list_sample_cluster_stats <- function(seurat_obj){
     } else {
       tmp <- dff %>% 
         group_by(seurat_clusters) %>% 
-        summarise(ncells = sum(ncells)) %>% 
+        summarise(ncells = sum(ncells), 
+                  avg.counts = round(mean(avg.counts), 0),
+                  avg.genes = round(mean(avg.genes),0 )) %>% 
         ungroup()
     }
     
@@ -300,18 +302,22 @@ list_sample_cluster_stats <- function(seurat_obj){
       mutate(all = sum(ncells), 
              cluster = as.character(seurat_clusters),
              pct = round(100*ncells/all,2)) %>% 
-      select(cluster, ncells, pct)
+      select(cluster, ncells, pct, avg.counts, avg.genes)
     
     bind_rows(tmp, tmp %>% 
                 summarise(cluster = "total", 
                           ncells = sum(ncells), 
-                          pct = sum(pct)))
+                          pct = sum(pct),
+                          avg.counts = round(mean(avg.counts),0), 
+                          avg.genes = round(mean(avg.genes),0)))
   }
   
   all_cells <- seurat_obj@meta.data %>% 
-    select(seurat_clusters, sample_id) %>% 
-    group_by_all() %>% 
-    summarise(ncells = n()) %>% 
+    select(seurat_clusters, sample_id, counts = nCount_RNA, genes = nFeature_RNA) %>% 
+    group_by(seurat_clusters, sample_id) %>% 
+    summarise(ncells = n(),
+              avg.counts = round(mean(counts),0),
+              avg.genes = round(mean(genes),0)) %>% 
     ungroup()
   
   samples_names <- c("all", seurat_obj@meta.data$sample_id %>% unique() %>% sort())
