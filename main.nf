@@ -96,6 +96,7 @@ workflow module1 {
 		    it[1].toString().split("_").last().toString(),
 		    it[1].toString(),
 		    it[2].parent]}
+	// .groupTuple(by:0, sort: {a,b -> b[0] <=> a[0]})
 	.groupTuple(by:0)
 	.map{sample_id,
 	     genome_ixs,
@@ -104,6 +105,12 @@ workflow module1 {
 			      genome_ixs[0],
 			      sample_paths[0]]}
 
+    
+    // aggregate all *summary.csv files from each individual sample together
+    calculate_summary_by_samples(samples_dirs_ch)
+
+    
+    // prepare initial RDS files and cellbarcodes for each individual sample
     rds_and_h5_processing(samples_dirs_ch)
 
     // modifying molecule h5 files (sample_id, path to directory with
@@ -112,6 +119,7 @@ workflow module1 {
 	.map{it->[it[0],it[-1]]}
 	.filter{it -> it[1] =~ "genebody|with-mono"}
 
+    
     // union of cellbarcodes for each sample id
     cellbarcodes = rds_and_h5_processing.out.cellbarcodes
     cellbarcodes.cross(molecule_h5_dirs)
@@ -128,6 +136,7 @@ workflow module1 {
 
     // make plots for module I
     intronic_exonic_plot(userdefined_ch)
+
 }
 
 // module1: calculate each sample separately
@@ -187,13 +196,54 @@ process cellranger_count {
     """
 }
 
+workflow calculate_summary_by_samples {
+
+    take:
+    
+    fake_var //just need to activate workflow after the processing of the all samples
+
+    main:
+    summary_path = channel.value("${projectDir}/${params.output_dir}/raw_h5_and_cloupe_files/")
+    summary_path | calc_metrics
+
+    emit:
+    calc_metrics.out
+}
+
+// workflow test6 {
+//     fake = channel.value("activate")
+//     calculate_summary_by_samples(fake)
+// }
+
+process calc_metrics {
+    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    conda '/projectnb2/wax-es/routines/condaenv/rlang4'
+    publishDir path: "${params.output_dir}/module_1_outputs/", mode: "copy", pattern: "*.csv", overwrite: true
+    
+    executor 'local'
+    // cpus 1
+    // memory '2 GB'
+
+    input:
+    val(summary_files_location)
+
+    output:
+    path("summary_by_samples.csv")
+    
+
+    script:
+
+    """
+    00_calculate_metrics.R --summary_path ${summary_files_location} --output summary_by_samples.csv
+    """
+}
 
 process rds_and_h5_processing {
     tag "${sample_id}"
     beforeScript 'source $HOME/.bashrc; module load miniconda'
     conda '/projectnb2/wax-es/routines/condaenv/rlang4'
     
-    cpus 4
+    cpus 8
     memory '32 GB'
 
     publishDir path: "${params.output_dir}/module_1_outputs/rds/", mode: "copy", pattern: "*.rds", overwrite: true, saveAs : {filename -> "${sample_id}_${filename}"}
