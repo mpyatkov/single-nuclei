@@ -53,7 +53,7 @@ combinedUmapTableDotplot <- function(seurat_obj, TITLE, labels_for_umap = NULL, 
 #' @export
 #'
 #' @examples
-mp_plot_umap <- function(seurat_obj, title = "", draw_labels = T,...){
+mp_plot_umap <- function(seurat_obj, title = "", draw_labels = T, ...){
   tmp <- DimPlot(seurat_obj, reduction = "umap", ...) + 
     ggtitle(title)
   
@@ -76,7 +76,7 @@ mp_plot_umap <- function(seurat_obj, title = "", draw_labels = T,...){
 
 ## supplementary function to create dotplot
 mp_dotplot <- function(sobj, genes, title = "", ...) {
-  DotPlot(sobj, features = genes, assay = "RNA")+
+  DotPlot(sobj, features = genes, assay = "RNA", ...)+
     RotatedAxis()+ 
     {if(title !="") ggtitle(title)} +
     theme(axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5),
@@ -85,7 +85,9 @@ mp_dotplot <- function(sobj, genes, title = "", ...) {
           legend.direction = "horizontal", 
           legend.position = "bottom",
           legend.box = "horizontal", 
-          legend.justification = "center")
+          legend.justification = "center",
+          legend.text=element_text(size=8),
+          legend.title = element_text(size = 10))
 }
 
 # ## supplementary function to create dotplot
@@ -153,12 +155,13 @@ UmapDotplotTableHeatmapPlot <- function(seurat_obj,
                                  genes_list,
                                  counter = "000", 
                                  sample_id = "all", 
-                                 TITLE = "") {
+                                 TITLE = "",
+                                 heatmap_markers = NULL) {
   
   #### PREDICT CELL TYPES
   ### Assign predicted cell types labels
   ## get new_labels,old_labels,heatmap_table
-  celltypes_list <- FindCellTypesByMarkers(sobj = seurat_obj)
+  celltypes_list <- FindCellTypesByMarkers(sobj = seurat_obj, heatmap_markers = NULL)
   celltypes_heatmap <- CreateCellTypesHeatmap(celltypes_list$heatmap_table)
   
   # ## dotplot for all samples together
@@ -208,7 +211,7 @@ AAAAA####
 }
 
 ## Predict celltypes by set of markers
-FindCellTypesByMarkers <- function(sobj) {
+FindCellTypesByMarkers <- function(sobj, heatmap_markers = NULL) {
   
   ## If function can not find any significant genes for several cluster
   ## then heatmap should show all zeros for such clusters for each celltype
@@ -217,16 +220,20 @@ FindCellTypesByMarkers <- function(sobj) {
   ## !! If it was detected only one celltype and even if the expression is negative for this celltye
   ## the procedure anyway assign this celltype for cluster because other is zero
   
-  biomarkers <- list(
-    PC = c("Glul","Gulo","Oat","Cyp2e1"),
-    PP = c("Pck1","Cyp2f2","Hal"),
-    Kupffer = c("Clec4f","Csf1r"),
-    Immune = c("Ptprc"),
-    HSC=c("Colec11","Dcn","Ecm1"),
-    Endo=c("Stab2","Gpr182","Kdr","Fcgr2b","Aqp1"),
-    Div=c("Top2a"),
-    Cholang=c("Epcam","Krt19","Krt7","Sox9")
-  )
+  biomarkers <- heatmap_markers
+  
+  if (is.null(heatmap_markers)) {
+    biomarkers <- list(
+      PC = c("Glul","Gulo","Oat","Cyp2e1"),
+      PP = c("Pck1","Cyp2f2","Hal"),
+      Kupffer = c("Clec4f","Csf1r"),
+      Immune = c("Ptprc"),
+      HSC=c("Colec11","Dcn","Ecm1"),
+      Endo=c("Stab2","Gpr182","Kdr","Fcgr2b","Aqp1"),
+      Div=c("Top2a"),
+      Cholang=c("Epcam","Krt19","Krt7","Sox9")
+    )
+  }
   
   DefaultAssay(sobj) <- "RNA"
   
@@ -330,19 +337,24 @@ list_sample_cluster_stats <- function(seurat_obj){
 }
 
 ## create heatmap by table (cluster, celltype, score)
-CreateCellTypesHeatmap <- function(df){
-  ggplot(df, aes(x = celltype, y = as.factor(cluster))) +
+CreateCellTypesHeatmap <- function(df, labels_text_size = 6, xaxis_text_size = 15, yaxis_text_size = 15, rotate_x = FALSE){
+  tmp <- ggplot(df, aes(x = celltype, y = as.factor(cluster))) +
     geom_tile(aes(fill = score),color= "gray50",size = 0.1)+
     scale_fill_gradient2(low = "blue", mid="white", high = "tomato")+
-    geom_text(aes(label=round(score,2)), size = 6)+
+    geom_text(aes(label=round(score,2)), size = labels_text_size)+
     scale_x_discrete(position = "top") +
     xlab("")+
     ylab("")+
     theme_minimal() +
     theme(legend.title = element_blank(),
           legend.position = "bottom",
-          axis.text.x = element_text(color = "black",size = 15),
-          axis.text.y = element_text(color = "black", size = 15))
+          axis.text.x = element_text(color = "black", size = xaxis_text_size),
+          axis.text.y = element_text(color = "black", size = yaxis_text_size))
+  
+  if (rotate_x){
+    tmp <- tmp+theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1,color = "black", size = xaxis_text_size))
+  }
+  tmp
 }
 
 #' find optimal number of cluster using binary search for resolution parameter
