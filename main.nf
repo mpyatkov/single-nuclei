@@ -792,6 +792,7 @@ process combine_extract {
     
     cpus 8
     memory '64 GB'
+    time '8h'
 
     publishDir path: "${params.output_dir}/module_3_outputs/extract_combine/rds/", mode: "copy", pattern: "*.rds", overwrite: true
     publishDir path: "${params.output_dir}/module_3_outputs/extract_combine/pdf/", mode: "copy", pattern: "*.pdf", overwrite: true
@@ -902,6 +903,7 @@ process calculate_deg {
     
     cpus 8
     memory '64 GB'
+    time '4h'
     // executor 'local'
     
     publishDir path: "${params.output_dir}/module_4_outputs/de_analysis/data/", mode: "copy", pattern: "*.tsv", overwrite: true
@@ -930,6 +932,94 @@ process calculate_deg {
     touch stub_data.tsv
     """
 }
+
+
+// MODULE_5 (Find all markers in all clusters)
+workflow module5 {
+    // LOGIC:
+    // + if we have custom path then use it
+    // + if we have only one RDS show it and use it if the code == "last"
+    // + if we have multiple RDS show all of them and by default use the recent one if the code == "last"
+    // + provide the md5 codes for users to make the selection easy
+    
+    downstream_rds = null
+    // use custom path
+    if (params.module5.rds_input.contains("/")) {
+	
+	downstream_rds = channel.value(params.module5.rds_input)
+	    .view{"Selected custom RDS file for Module 4 downstream analysis:"}
+	    .view()
+	
+    } else {
+	// check how many rds we have
+	
+	log.info("You have the following RDS files:")
+	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds").view()
+	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
+	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 5"}
+	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
+	    .view{it->it[0..1].join(" -- ")}
+	    .toSortedList{a,b -> b[2] <=> a[2]}
+
+	// use the recent one
+	if (params.module5.rds_input == "last") {
+	    downstream_rds = all
+		.view{"The most recent one which will be used for Module 5 downstream analysis is:"}
+		.map{it -> it[0][1]} // path of rds file
+		.view()
+	}
+	// use the md5 code 
+	else {
+	    downstream_rds = all
+		.flatMap()
+		.filter{id, path, date -> id == params.module5.rds_input}
+		.ifEmpty{exit 1, "Cannot find any RDS using the following code: '${params.module5.rds_input}'"}
+		.view{"Will be used the following RDS file for Module 3 downstream analysis ('${params.module5.rds_input})':"}
+		.map{it -> it[1]}
+		.view()
+	}
+
+    }
+
+    downstream_rds | find_all_markers_deg
+}
+
+process find_all_markers_deg {
+    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    conda '/projectnb2/wax-es/routines/condaenv/rlang4'
+    
+    cpus 2
+    memory '32 GB'
+    time '8h'
+    // executor 'local'
+    
+    publishDir path: "${params.output_dir}/module_5_outputs/de_analysis/plots/", mode: "copy", pattern: "*.pdf", overwrite: true
+    publishDir path: "${params.output_dir}/module_5_outputs/de_analysis/data/", mode: "copy", pattern: "*.csv", overwrite: true
+    
+    input:
+    path(rds)
+    
+    output:
+    path("*.pdf")
+    path("*.csv")
+
+    script:
+    
+    """
+    cp ${projectDir}/bin/UmapPlot.R ./
+    cp ${projectDir}/bin/findMarkersPairwise.R ./
+
+    09_detect_all_markers.R \
+	--input_rds ${rds}
+    """
+    
+    stub:
+    """
+    touch stub_detect_all_markers.pdf
+    touch stub_detect_all_markers.csv
+    """
+}
+
 
 def pprintRds(rds_map){
 
@@ -965,12 +1055,14 @@ workflow show_parameters {
 	log.info "    ${c_yellow}${key}: ${c_reset}${value}"
     }
     log.info("\n")
+
+    // find RDS files inside module2 and module3 directories
     
-    if (params.current_module.contains("module3") || params.current_module.contains("module4")) {
+    if (params.current_module.contains("module3") || params.current_module.contains("module4") || params.current_module.contains("module5")) {
 	log.info("You have the following RDS files:")
 	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds")
 	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
-	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 3"}
+	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module"}
 	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
 	    .toSortedList{a,b -> b[2] <=> a[2]}
 	    .collect{it->it.collectEntries{l-> [l[0],l[1]]}}
