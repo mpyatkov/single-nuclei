@@ -96,8 +96,11 @@ genes_list <- c('Cyp2e1', 'Glul', 'Oat', 'Gulo', 'Ass1', 'Hamp', 'Gstp1', 'Ubb',
 ## load config file
 ## headers: c(ORIGINAL_CLUSTER_ID, COMBINING, EXTRACTING)
 ## TODO: check input format, otherwise produce error
-extract_combine_config <- read_csv(extract_combine_config_path, col_names = T, show_col_types = FALSE)
-
+extract_combine_config <- read_csv(extract_combine_config_path, col_names = T,
+                                   show_col_types = FALSE,
+                                   col_types = list(ORIGINAL_CLUSTER_ID = "c",
+                                                    COMBINING = "c",
+                                                    EXTRACTING = "c"))
 # load rds file
 # TODO: check if seurat file exists
 input_seurat <- readRDS(arg_input_rds)
@@ -109,7 +112,7 @@ print(argv)
 checking_configuration_file <- function(seurat_obj, config_file){
 
   ## make a table with extracting/combining
-  tmp_clusters <- tibble(ORIGINAL_CLUSTER_ID = as.numeric(levels(Idents(seurat_obj)))) %>% 
+  tmp_clusters <- tibble(ORIGINAL_CLUSTER_ID = as.character(levels(Idents(seurat_obj)))) %>% 
     full_join(., config_file)  
   
   ## checking for the absence of unknown clusters in combine/extract config
@@ -126,7 +129,7 @@ checking_configuration_file <- function(seurat_obj, config_file){
     rowwise() %>% 
     mutate(COMBINING = coalesce(COMBINING,ORIGINAL_CLUSTER_ID)) %>% 
     ungroup() %>% 
-    replace_na(list(EXTRACTING = 0))
+    replace_na(list(EXTRACTING = "0"))
   
   tmp_clusters
 }
@@ -317,7 +320,7 @@ if (recluster_bool){
   TITLE <- str_interp("RECLUSTERING=FALSE. Resolution: ${resolution_text}, min.dist: Unknown, #PCs: ${num_of_pc}, #clusters: ${num_of_clusters}" )
   
   #### MAKING PLOT
-  all_samples_combined <- UmapDotplotTableHeatmapPlot(input_seurat, genes_list = genes_list, sample_id = "all", TITLE = TITLE)
+  all_samples_combined <- UmapDotplotTableHeatmapPlot(input_seurat, genes_list = genes_list, sample_id = "all", TITLE = TITLE, rename_umap_labels = F)
   
   #### MAKING INDIVIDIAL PLOTS
   ob.list <- SplitObject(input_seurat, split.by = "sample_id")
@@ -337,7 +340,7 @@ if (recluster_bool){
   gc()
   
   if (!DEBUG){
-    saveRDS(new_seurat, arg_output_rds)  
+    saveRDS(input_seurat, arg_output_rds)  
   }
 }
 

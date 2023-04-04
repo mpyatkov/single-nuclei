@@ -156,7 +156,8 @@ UmapDotplotTableHeatmapPlot <- function(seurat_obj,
                                  counter = "000", 
                                  sample_id = "all", 
                                  TITLE = "",
-                                 heatmap_markers = NULL) {
+                                 heatmap_markers = NULL,
+                                 rename_umap_labels = T) {
   
   #### PREDICT CELL TYPES
   ### Assign predicted cell types labels
@@ -167,17 +168,21 @@ UmapDotplotTableHeatmapPlot <- function(seurat_obj,
   # ## dotplot for all samples together
   # DefaultAssay(seurat_obj) <- "RNA"
 
-  #### ADD LABELS FOR UMAP IF EXISTS
-  ## rename clusters (set new_labels)
-  seurat_obj <- RenameIdents(seurat_obj, celltypes_list$new_labels)
+  if (rename_umap_labels) {
+      #### ADD LABELS FOR UMAP IF EXISTS
+      ## rename clusters (set new_labels)
+      seurat_obj <- RenameIdents(seurat_obj, celltypes_list$new_labels)
 
-    ## Plot all samples together on one UMAP without labels
-  aggr_umap_all_clusters <- mp_plot_umap(seurat_obj, title = TITLE, draw_labels = T)
-  
-  ## rename clusters back (set old_labels)
-  seurat_obj <- RenameIdents(seurat_obj, celltypes_list$old_labels)
-  
-  
+      ## Plot all samples together on one UMAP without labels
+      aggr_umap_all_clusters <- mp_plot_umap(seurat_obj, title = TITLE, draw_labels = T)
+      
+      ## rename clusters back (set old_labels)
+      seurat_obj <- RenameIdents(seurat_obj, celltypes_list$old_labels)
+  } else {
+      ## just plot UMAP
+      aggr_umap_all_clusters <- mp_plot_umap(seurat_obj, title = TITLE, draw_labels = T)
+  }
+    
   #### CREATE DOTPLOT
   ## TODO: at the moment all genes will be represented on the dotplots
   aggr_umap_all_clusters_dotplot <- mp_dotplot(seurat_obj, genes_list)

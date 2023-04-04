@@ -107,7 +107,7 @@ workflow module1 {
 
     
     // aggregate all *summary.csv files from each individual sample together
-    calculate_summary_by_samples(samples_dirs_ch)
+    // calculate_summary_by_samples(samples_dirs_ch)
 
     
     // prepare initial RDS files and cellbarcodes for each individual sample
