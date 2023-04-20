@@ -133,6 +133,8 @@ extract_significant <- function(df, sample_id, topgenes = 200, adj_pval_thr = 0.
     mutate(id = str_extract(c1, "([[:alnum:]]+)"),
            c1 = str_extract(c1, "(?<=_)([[:alnum:]]+)"),
            c2 = str_extract(c2, "(?<=_)([[:alnum:]]+)")) %>% 
+           c1 = str_extract(c1, "(?<=_)([[:print:]]+)"),
+           c2 = str_extract(c2, "(?<=_)([[:print:]]+)")) %>% 
     group_by(c1,c2) %>% 
     slice_min(order_by = adjusted_p_value, n = topgenes) %>% ## extracting top N for each comparison
     arrange(adjusted_p_value, .by_group = T) %>% 
