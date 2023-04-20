@@ -230,7 +230,7 @@ compute_de <- function(seurat_obj, s1,c1,s2,c2, ix) {
   }
 
   ## prepare Segex output data.frame
-  segex_output <- exportToSegex(input_df = markers_short)
+  segex_output <- exportToSegex(input_df = markers_short, from = "mm10")
   segex_fn <- str_glue("{ix}_scLoupe_{id.1}_vs_{id.2}_DiffExp_IntronicMonoExonic.tsv")
 
   
