@@ -753,7 +753,7 @@ workflow module3 {
 	// check how many rds we have
 	
 	log.info("You have the following RDS files:")
-	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds")
+	all = channel.fromPath("${params.output_dir}/module_2_outputs/**.rds")
 	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
 	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 3"}
 	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
@@ -790,12 +790,14 @@ process combine_extract {
     beforeScript 'source $HOME/.bashrc; module load miniconda'
     conda '/projectnb2/wax-es/routines/condaenv/rlang4'
     
-    cpus 8
+    cpus 16
     memory '64 GB'
-    time '8h'
-
+    time '24h'
+    cache false
+    
     publishDir path: "${params.output_dir}/module_3_outputs/extract_combine/rds/", mode: "copy", pattern: "*.rds", overwrite: true
     publishDir path: "${params.output_dir}/module_3_outputs/extract_combine/pdf/", mode: "copy", pattern: "*.pdf", overwrite: true
+    publishDir path: "${params.output_dir}/module_3_outputs/extract_combine/data/", mode: "copy", pattern: "*.csv", overwrite: true
     // publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/data", mode: "copy", pattern: "*.csv", overwrite: true
     
     input:
@@ -804,6 +806,7 @@ process combine_extract {
     output:
     path("*.pdf")
     path("*.rds"), optional: true
+    path("*.csv"), optional: true
     // path("*.csv"), optional: true
     
 
@@ -819,11 +822,12 @@ process combine_extract {
 	--input_rds ${rds}\
 	--extract_combine_config ${projectDir}/${params.module3.extract_combine_config} \
 	--recluster ${params.module3.recluster_after_extraction} \
+	--rename_umap_labels ${params.module3.rename_umap_labels} \
 	--nclusters ${params.module3.seurat_nclusters} \
 	--umap_resolution ${params.module3.umap_resolution} \
         --umap_min_dist ${params.module3.umap_min_dist}\
         --umap_npcs ${params.module3.umap_npcs} \
-	--number_of_cores 4 \
+	--number_of_cores 8 \
 	--output_rds ${output_rds}
 
     ## --number_of_cores ${task.cpus} 
@@ -867,7 +871,7 @@ workflow module4 {
 	// check how many rds we have
 	
 	log.info("You have the following RDS files:")
-	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds")
+	all = channel.fromPath("${params.output_dir}/module_2_outputs/**.rds")
 	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
 	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 3"}
 	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
@@ -905,6 +909,7 @@ process calculate_deg {
     memory '64 GB'
     time '4h'
     // executor 'local'
+    cache false
     
     publishDir path: "${params.output_dir}/module_4_outputs/de_analysis/data/", mode: "copy", pattern: "*.tsv", overwrite: true
     publishDir path: "${params.output_dir}/module_4_outputs/de_analysis/pdf/", mode: "copy", pattern: "*.pdf", overwrite: true
@@ -954,7 +959,7 @@ workflow module5 {
 	// check how many rds we have
 	
 	log.info("You have the following RDS files:")
-	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds").view()
+	all = channel.fromPath("${params.output_dir}/module_2_outputs/**.rds").view()
 	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
 	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module 5"}
 	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}
@@ -1060,7 +1065,7 @@ workflow show_parameters {
     
     if (params.current_module.contains("module3") || params.current_module.contains("module4") || params.current_module.contains("module5")) {
 	log.info("You have the following RDS files:")
-	all = channel.fromPath("${params.output_dir}/module_2_outputs/postaggregation/**.rds")
+	all = channel.fromPath("${params.output_dir}/module_2_outputs/**.rds")
 	    .mix(channel.fromPath("${params.output_dir}/module_3_outputs/**.rds"))
 	    .ifEmpty{exit 1, "Cannot find any input RDS files for Module"}
 	    .map{it->[it.toString().md5().substring(0,4), it.toString(), new File(it.toString()).lastModified()]}

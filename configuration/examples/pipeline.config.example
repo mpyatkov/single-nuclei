@@ -188,6 +188,10 @@ params {
 	// !nextflow parameter
 	rewrite_rds = "TRUE"
 
+	// TRUE enable autodetecting celltypes and rename default labels on UMAP
+	// FALSE keep labels as is.
+	rename_umap_labels = "FALSE"
+	
 	// Reclustering of extracted cellbarcodes using SCTransform
 	// "TRUE" / "FALSE"
 	// if recluster_after_extraction equal to "TRUE", then use the
