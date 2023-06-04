@@ -18,19 +18,45 @@ ParseArguments <- function() {
     
     p <- add_argument(p, '--umap_resolution', help='This parameters will overwrite "nclusters" parameter if is not "auto"', default="0.1,0.3")
     p <- add_argument(p, '--extract_combine_config', help='configuration file with a header. Contains info how to exctact/combine clusters in RDS', 
-                      default="extract_combine_config.csv")
+                      default=NULL)
     
     p  <- add_argument(p, '--number_of_cores', 
                        help='some part of the script can be runned in parallel',
                        default=2)
+    p <- add_argument(p, '--rename_umap_labels',
+                      help='enable autodetection of celltypes and rename UMAP clusters',
+                      default="TRUE")
 
-    p <- add_argument(p,'--output_rds', default="output_rds.rds", help="output RDS filename")
+    ## alternative to configuration file
+    p <- add_argument(p, "--ec_clusters", 
+                      help="comma separated list of original clusters (--ec_clusters, --ec_combine and --ec_extract options depend each other)",
+                      default = NULL)
     
+    p <- add_argument(p,"--ec_combine",
+                      help="comma separated list of clusters to combine (--ec_clusters, --ec_combine and --ec_extract options depend each other)",
+                      default = NULL)
+    
+    p <- add_argument(p,"--ec_extract",
+                      help="comma separated list of clusters to extract (--ec_clusters, --ec_combine and --ec_extract options depend each other)",
+                      default = NULL)
+    
+    ## exclude/include CB
+    p <- add_argument(p, '--drop_cellbarcodes', 
+                      help='csv file with column CB contains cellbarcodes which should be excluded from Seurat object', 
+                      default=NULL)
+    
+    p <- add_argument(p, '--useonly_cellbarcodes', 
+                      help='csv file with column CB contains cellbarcodes which should be used for the analysis', 
+                      default=NULL)
+    
+    
+    p <- add_argument(p,'--output_rds', default="output_rds.rds", help="output RDS filename")
 
     return(parse_args(p))
 }
 
 argv <- ParseArguments()
+print(argv)
 
 ### LOAD LIBRARIES ###
 library(tidyverse)
@@ -54,6 +80,12 @@ str_to_vec <- function(s){
     as.numeric()
 }
 
+## to "1,2,3" -> "1","2","3"
+str_to_vecstr <- function(s) {
+  str_split(s,",", simplify = T) %>% 
+    str_trim() %>% 
+    discard(~.=="")
+}
 
 ################
 #### PARAMETERS ####
@@ -64,6 +96,7 @@ arg_input_rds <- argv$input_rds
 arg_output_rds <- argv$output_rds
 
 recluster_bool <- ifelse(argv$recluster %in% c('TRUE', 'true'), TRUE, FALSE)
+rename_umap_labels_bool <- ifelse(argv$rename_umap_labels %in% c('TRUE', 'true'), TRUE, FALSE)
 
 ## maybe vector parameters
 ## does not work with ifelse
@@ -76,34 +109,62 @@ umap_npcs <- str_to_vec(argv$umap_npcs)
 extract_combine_config_path <- argv$extract_combine_config
 
 if (DEBUG) {
-  # ONLY FOR DEBUG
-  arg_input_rds <- "/projectnb2/wax-dk/max/SCexp/G190_G183/output/module_2_outputs/postaggregation/with-mono_matrix_with-mono_cellbarcodes/rds/module2_aggregated_seurat.rds"
-  ## configuration file
-  extract_combine_config_path <- "/projectnb2/wax-dk/max/SCexp/G190_G183/configuration/combine_extract_config.csv"
-  umap_npcs <- c(8,10)
+  # # ONLY FOR DEBUG
+  arg_input_rds <- "/projectnb/wax-dk/max/ATAC_TCPO/G183_G193_SC/output/module_2_outputs/original_results_before_hybrid_cellbarcodes/postaggregation/with-mono_matrix_with-mono_cellbarcodes/rds/module2_aggregated_seurat.rds"
+  # ## configuration file
+  extract_combine_config_path <- "/projectnb2/wax-dk/max/ATAC_TCPO/G183_G193_SC/configuration/combine_extract_config.csv.orig_non_hep"
+  # umap_npcs <- c(8,10)
+  
+  argv$useonly_cellbarcodes <-  "/projectnb/wax-dk/max/ATAC_TCPO/G183_G193_SC/ec_orig_non_hep_minus_pp/minus_pp.csv"
+  argv$drop_cellbarcodes <-  NA
 }
 
 ### MAIN ###
 
 ## only for debug (default_genes_list)
-genes_list <- c('Cyp2e1', 'Glul', 'Oat', 'Gulo', 'Ass1', 'Hamp', 'Gstp1', 'Ubb', 'Selenbp2', 'Sds', 'Cyp2f2', 'Pck1',
-                'Hal', 'Il2rb', 'Cxcr6', 'Gzma', 'Csf3r', 'S100a6', 'Pkhd1', 'Sox9', 'Epcam', 'Krt7', 'Krt19', 'Irf8',
-                'Itgax', 'Clec4f', 'Csf1r', 'Jchain', 'Cd79a', 'Cd79b', 'Top2a', 'Stab2', 'Kdr', 'Aqp1', 'Fcgr2b',
-                'Gpr182', 'Ebf1', 'Skap1', 'Ptprc', 'Ank3', 'Dcn', 'Colec11', 'Ecm1', 'Alb', 'Ttr', 'Apoa1', 'Serpina1c',
-                'mt-Atp6', 'mt-Atp8', 'mt-Co3', 'mt-Co1', 'mt-Co2', 'mt-Nd2', 'mt-Nd4', 'mt-Cytb', 'mt-Nd1', 'mt-Nd3',
-                'mt-Nd4l', 'mt-Nd5', 'mt-Nd6')
+
 
 ## load config file
 ## headers: c(ORIGINAL_CLUSTER_ID, COMBINING, EXTRACTING)
 ## TODO: check input format, otherwise produce error
-extract_combine_config <- read_csv(extract_combine_config_path, col_names = T,
-                                   show_col_types = FALSE,
-                                   col_types = list(ORIGINAL_CLUSTER_ID = "c",
-                                                    COMBINING = "c",
-                                                    EXTRACTING = "c"))
+extract_combine_config <- NULL
+if (is.na(extract_combine_config_path)){
+  ## generate config from cmd
+  extract_combine_config <- tibble(ORIGINAL_CLUSTER_ID = str_to_vecstr(argv$ec_clusters),
+                                   COMBINING = str_to_vecstr(argv$ec_combine),
+                                   EXTRACTING = str_to_vecstr(argv$ec_extract))
+} else {
+  extract_combine_config <- read_csv(extract_combine_config_path, col_names = T,
+                                     show_col_types = FALSE,
+                                     col_types = list(ORIGINAL_CLUSTER_ID = "c",
+                                                      COMBINING = "c",
+                                                      EXTRACTING = "c"))
+}
+
 # load rds file
 # TODO: check if seurat file exists
 input_seurat <- readRDS(arg_input_rds)
+
+## use only the following CB
+if (!is.na(argv$useonly_cellbarcodes)) {
+  print("USING ONLY SPECIFIC CB")
+  use_only_cb <- read_csv(argv$useonly_cellbarcodes,col_names = T) %>% 
+    pull(CB)
+  
+  input_seurat <- subset(input_seurat, cells = use_only_cb)
+}
+
+## drop the following CB
+if (!is.na(argv$drop_cellbarcodes)) {
+  print("DROPPING SPECIFIC CB")
+  
+  drop_cb <- read_csv(argv$drop_cellbarcodes,col_names = T) %>% 
+    select(CB) %>% 
+    pull(CB)
+  
+  final_cb <- setdiff(input_seurat@meta.data$CB, drop_cb)
+  input_seurat <- subset(input_seurat, cells = final_cb)
+}
 
 print(argv)
 
@@ -113,8 +174,9 @@ checking_configuration_file <- function(seurat_obj, config_file){
 
   ## make a table with extracting/combining
   tmp_clusters <- tibble(ORIGINAL_CLUSTER_ID = as.character(levels(Idents(seurat_obj)))) %>% 
-    full_join(., config_file)  
-  
+    full_join(., config_file)  %>% 
+    filter(EXTRACTING != 0) ## check only clusters we are going to export
+
   ## checking for the absence of unknown clusters in combine/extract config
   unknown_clusters <- setdiff(tmp_clusters$ORIGINAL_CLUSTER_ID, as.numeric(levels(seurat_obj))) 
   
@@ -246,17 +308,40 @@ if (recluster_bool){
       } else {
         i$resolution
       }
-      
+
+
+      ## "Export projections for temporary plots")
+      as_tibble(new_seurat@reductions$umap@cell.embeddings, rownames = "CB") %>%
+        left_join(., new_seurat@meta.data %>% select(CB, seurat_clusters, sample_id), by = "CB") %>%
+        write_csv(., str_glue("{i$ix}_aggr_res{resolution_text}_pc{i$npcs}_dst{i$min.dist}_cl{i$number_of_clusters}.csv"), col_names = T)
+
+        
       TITLE <- str_interp("${i$ix} Aggregated. Resolution: ${resolution_text}, min.dist: ${i$min.dist}, #PCs: ${i$npcs}, #clusters: ${i$number_of_clusters}" )
 
       #### MAKING PLOT
       print("creating UmapDotplotTableHeatmap plot")
-      final.umap.plot <- UmapDotplotTableHeatmapPlot(new_seurat, genes_list = genes_list, sample_id = "all", TITLE = TITLE)
+      
+      # final.umap.plot <- UmapDotplotTableHeatmapPlot(new_seurat,
+      #                                                genes_list = genes_list,
+      #                                                sample_id = "all",
+      #                                                rename_umap_labels = rename_umap_labels_bool,
+      #                                                TITLE = TITLE)
+      
+      final.umap.plot <- UmapDotplotTableHeatmapPlot_v2(seurat_obj = new_seurat, 
+                                                        genes_list = DEFAULT_MARKER_LIST,
+                                                        sample_id = "all",
+                                                        additional_genes_list = CELL_PAPER_MARKERS, 
+                                                        rename_umap_labels = rename_umap_labels_bool,
+                                                        TITLE = TITLE)
       
       #### SAVE PLOT
       print("save to file")
       plot_name <- str_interp("${i$ix}_aggr_res${resolution_text}_pc${i$npcs}_dst${i$min.dist}_cl${i$number_of_clusters}.pdf")
-      final.umap.plot %>% ggsave(filename = plot_name, width = 20, height = 15.50)
+        final.umap.plot %>% ggsave(filename = plot_name, width = 22, height = 17.05)
+
+        
+      
+        
     } ## end of loop
     
   } else {
@@ -268,7 +353,7 @@ if (recluster_bool){
                                 min.dist = i$min.dist, 
                                 number_of_clusters = i$number_of_clusters, 
                                 opt_resolution =  i$resolution,
-                                runsct = F)
+                                runsct = T)
     
     gc()
     
@@ -280,16 +365,47 @@ if (recluster_bool){
     TITLE <- str_interp("Aggregated. Resolution: ${resolution_text}, min.dist: ${i$min.dist}, #PCs: ${i$npcs}, #clusters: ${i$number_of_clusters}" )
     
     #### MAKING PLOT
-    all_samples_combined <- UmapDotplotTableHeatmapPlot(new_seurat, genes_list = genes_list, sample_id = "all", TITLE = TITLE)
+    # all_samples_combined <- UmapDotplotTableHeatmapPlot(new_seurat,
+    #                                                     genes_list = genes_list,
+    #                                                     sample_id = "all",
+    #                                                     rename_umap_labels = rename_umap_labels_bool,
+    #                                                     TITLE = TITLE)
     
+    all_samples_combined <- UmapDotplotTableHeatmapPlot_v2(seurat_obj = new_seurat, 
+                                                           genes_list = DEFAULT_MARKER_LIST,
+                                                           sample_id = "all",
+                                                           additional_genes_list = CELL_PAPER_MARKERS, 
+                                                           rename_umap_labels = rename_umap_labels_bool,
+                                                           TITLE = TITLE)
+      ## export projections for aggregated plot
+      as_tibble(new_seurat@reductions$umap@cell.embeddings, rownames = "CB") %>%
+          left_join(., new_seurat@meta.data %>% select(CB, seurat_clusters, sample_id), by = "CB") %>%
+          write_csv(., str_glue("aggregated_projections.csv"), col_names = T)
+      
+      
     #### MAKING INDIVIDIAL PLOTS
     ob.list <- SplitObject(new_seurat, split.by = "sample_id")
     
     all_samples_by_sample_id <- lapply(X = names(ob.list), FUN = function(x) {
-      tmp <- UmapDotplotTableHeatmapPlot(ob.list[[x]], 
-                                         genes_list = genes_list, 
-                                         sample_id = x, 
-                                         TITLE = TITLE)
+      
+      # tmp <- UmapDotplotTableHeatmapPlot(ob.list[[x]], 
+      #                                    genes_list = genes_list, 
+      #                                    sample_id = x,
+      #                                    rename_umap_labels = rename_umap_labels_bool,
+      #                                    TITLE = TITLE)
+      
+      tmp <- UmapDotplotTableHeatmapPlot_v2(seurat_obj = ob.list[[x]], 
+                                            genes_list = DEFAULT_MARKER_LIST,
+                                            sample_id = x,
+                                            additional_genes_list = CELL_PAPER_MARKERS, 
+                                            rename_umap_labels = rename_umap_labels_bool,
+                                            TITLE = TITLE)
+
+      ## export projections for separate samples
+      ## as_tibble(ob.list[[x]]@reductions$umap@cell.embeddings, rownames = "CB") %>%
+      ##     left_join(., ob.list[[x]]@meta.data %>% select(CB, seurat_clusters), by = "CB") %>%
+      ##     write_csv(., str_glue("{x}_projections.csv"), col_names = T)
+      
       cowplot::plot_grid(tmp)
     })
     
@@ -297,7 +413,7 @@ if (recluster_bool){
     append(list(cowplot::plot_grid(all_samples_combined)), all_samples_by_sample_id) %>%
     # all_samples_combined %>% 
       marrangeGrob(nrow =1, ncol=1) %>% 
-      ggsave(filename = "aggr_umaps.pdf", width = 20.0, height = 15.50)
+      ggsave(filename = "aggr_umaps.pdf", width = 22.0, height = 17.05)
     gc()
     
     if (!DEBUG){
@@ -320,23 +436,37 @@ if (recluster_bool){
   TITLE <- str_interp("RECLUSTERING=FALSE. Resolution: ${resolution_text}, min.dist: Unknown, #PCs: ${num_of_pc}, #clusters: ${num_of_clusters}" )
   
   #### MAKING PLOT
-  all_samples_combined <- UmapDotplotTableHeatmapPlot(input_seurat, genes_list = genes_list, sample_id = "all", TITLE = TITLE, rename_umap_labels = F)
+  # all_samples_combined <- UmapDotplotTableHeatmapPlot(input_seurat, genes_list = genes_list, sample_id = "all", TITLE = TITLE, rename_umap_labels = rename_umap_labels_bool)
+  all_samples_combined <- UmapDotplotTableHeatmapPlot_v2(seurat_obj = input_seurat, 
+                                                         genes_list = DEFAULT_MARKER_LIST,
+                                                         sample_id = "all",
+                                                         additional_genes_list = CELL_PAPER_MARKERS, 
+                                                         rename_umap_labels = rename_umap_labels_bool,
+                                                         TITLE = TITLE)
   
   #### MAKING INDIVIDIAL PLOTS
   ob.list <- SplitObject(input_seurat, split.by = "sample_id")
   
   all_samples_by_sample_id <- lapply(X = names(ob.list), FUN = function(x) {
-    tmp <- UmapDotplotTableHeatmapPlot(ob.list[[x]], 
-                                       genes_list = genes_list, 
-                                       sample_id = x, 
-                                       TITLE = TITLE)
+    # tmp <- UmapDotplotTableHeatmapPlot(ob.list[[x]], 
+    #                                    genes_list = genes_list,
+    #                                    rename_umap_labels = rename_umap_labels_bool,
+    #                                    sample_id = x, 
+    #                                    TITLE = TITLE)
+
+    tmp <- UmapDotplotTableHeatmapPlot_v2(seurat_obj = ob.list[[x]], 
+                                          genes_list = DEFAULT_MARKER_LIST,
+                                          sample_id = x,
+                                          additional_genes_list = CELL_PAPER_MARKERS, 
+                                          rename_umap_labels = rename_umap_labels_bool,
+                                          TITLE = TITLE)
     cowplot::plot_grid(tmp)
   })
   
   #### COMBINE AND SAVE ALL PLOTS 
   append(list(cowplot::plot_grid(all_samples_combined)), all_samples_by_sample_id) %>% 
     marrangeGrob(nrow =1, ncol=1) %>% 
-    ggsave(filename = "aggr_umaps.pdf", width = 20.0, height = 15.50)
+    ggsave(filename = "aggr_umaps.pdf", width = 22.0, height = 17.05)
   gc()
   
   if (!DEBUG){
