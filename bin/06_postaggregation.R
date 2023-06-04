@@ -606,11 +606,11 @@ FindCellTypesByMarkers <- function(sobj) {
     PC = c("Glul","Gulo","Oat","Cyp2e1"),
     PP = c("Pck1","Cyp2f2","Hal"),
     Kupffer = c("Clec4f","Csf1r"),
-    Immune = c("Ptprc"),
-    HSC=c("Colec11","Dcn","Ecm1"),
+    Immune = c("Ebf1","Skap1"), ##was only Ptprc
+    HSC=c("Colec11","Dcn","Ecm1"), 
     Endo=c("Stab2","Gpr182","Kdr","Fcgr2b","Aqp1"),
     Div=c("Top2a"),
-    Cholang=c("Epcam","Krt19","Krt7","Sox9")
+    Cholang=c("Epcam","Krt19","Krt7","Sox9","Pkhd1") ## added Pkhd1
   )
   
   tmp <- map_dfr(names(biomarkers), function(name) {
@@ -659,8 +659,8 @@ CreateCellTypesHeatmap <- function(df){
     scale_fill_gradient2(low = "blue", mid="white", high = "tomato")+
     geom_text(aes(label=round(score,2)), size = 6)+
     scale_x_discrete(position = "top") +
-    xlab("")+
-    ylab("")+
+    xlab("markers")+
+    ylab("clusters")+
     theme_minimal() +
     theme(legend.title = element_blank(),
           legend.position = "bottom",
