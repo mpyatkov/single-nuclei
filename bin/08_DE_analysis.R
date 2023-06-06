@@ -37,6 +37,14 @@ library(cowplot)
 source("UmapPlot.R")
 
 
+get_condition_by_sample_id <- function(sid, sobj) {
+  sobj@meta.data %>% 
+    select(sample_id, condition) %>% 
+    filter(sample_id == sid) %>% 
+    unique() %>% 
+    pull(condition)
+}
+
 if (DEBUG) {
  argv$de_config <- "/projectnb2/wax-dk/max/SCexp/G190_G183/configuration/de_config.csv" 
  argv$input_rds <- "/projectnb/wax-dk/max/SCexp/G190_G183/output/module_3_outputs/extract_combine/rds/output.rds"
@@ -231,7 +239,14 @@ compute_de <- function(seurat_obj, s1,c1,s2,c2, ix) {
 
   ## prepare Segex output data.frame
   segex_output <- exportToSegex(input_df = markers_short, from = "mm10")
-  segex_fn <- str_glue("{ix}_scLoupe_{id.1}_vs_{id.2}_DiffExp_IntronicMonoExonic.tsv")
+  
+  segex_fn <- if (any(str_detect(c(s1,s2),"AGGR"))) {
+    str_glue("{ix}_scLoupe_{id.1}_vs_{id.2}_DiffExp_IntronicMonoExonic.tsv") 
+  } else {
+    s1_label <- get_condition_by_sample_id(s1, input_seurat)
+    s2_label <- get_condition_by_sample_id(s2, input_seurat)
+    str_glue("{ix}_scLoupe_{s1}_{s1_label}_{c1}_vs_{s2}_{s2_label}_{c2}_DiffExp_IntronicMonoExonic.tsv")
+  }
 
   
   ## DOTPLOT
