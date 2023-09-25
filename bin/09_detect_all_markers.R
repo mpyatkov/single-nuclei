@@ -23,9 +23,10 @@ print(argv)
 
 ## install lab libs
 library(devtools)
-devtools::install_github("mpyatkov/FindMarkersLoupe", upgrade = "never")
-library(FindMarkersLoupe)
-
+if(!require(FindMarkersLoupe)){
+    devtools::install_local("/projectnb/wax-es/WAXMANLAB_SOFT/FindMarkersLoupe", upgrade = "never")
+    library(FindMarkersLoupe)
+}
 
 library(tidyverse)
 library(stringi)

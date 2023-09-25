@@ -19,13 +19,22 @@ print(argv)
 
 ## install lab libs
 library(devtools)
-devtools::install_github("mpyatkov/FindMarkersLoupe", upgrade = "never")
-devtools::install_github("mpyatkov/NotationConverter", upgrade = "never")
+#devtools::install_github("mpyatkov/FindMarkersLoupe", upgrade = "never")
+#devtools::install_github("mpyatkov/NotationConverter", upgrade = "never")
+if(!require(FindMarkersLoupe)){
+    devtools::install_local("/projectnb/wax-es/WAXMANLAB_SOFT/FindMarkersLoupe", upgrade = "never")
+    library(FindMarkersLoupe)
+}
+
+if(!require(NotationConverter)){
+    devtools::install_local("/projectnb/wax-es/WAXMANLAB_SOFT/NotationConverter", upgrade = "never")
+    library(NotationConverter)
+}
 
 # detach("package:FindMarkersLoupe", unload=TRUE)
 
-library(FindMarkersLoupe)
-library(NotationConverter)
+## library(FindMarkersLoupe)
+## library(NotationConverter)
 
 library(tidyverse)
 library(gridExtra)
