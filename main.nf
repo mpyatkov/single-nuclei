@@ -384,8 +384,8 @@ process intronic_exonic_plot {
     memory '64 GB'
     // executor 'local'
 
-    publishDir path: "${params.output_dir}/module_1_outputs/${downstream_gtf}/${sample_id}/plots/", mode: "copy", pattern: "*.pdf", overwrite: true
-    publishDir path: "${params.output_dir}/module_1_outputs/${downstream_gtf}/${sample_id}/data/", mode: "copy", pattern: "*.csv", overwrite: true
+    publishDir path: "${params.output_dir}/module_1_outputs/${sample_id}/plots/", mode: "copy", pattern: "*.pdf", overwrite: true
+    publishDir path: "${params.output_dir}/module_1_outputs/${sample_id}/${downstream_gtf}_data/", mode: "copy", pattern: "*.csv", overwrite: true
     // publishDir path: "${params.output_dir}/module_1_outputs/${downstream_gtf}/${sample_id}/data/", mode: "copy", pattern: "${sample_id}_${gtfname_genome}_info.h5", overwrite: true
 
     input:
@@ -587,7 +587,7 @@ workflow module2 {
     // 3. if downstream_umi == "custom" && users_cellbarcodes == "genebody" or "with-mono" --> 1 tuple [id_umi, path_mx, id_cb, path_cb]
     // 4. if downstream_umi == "custom" && users_cellbarcodes == "custom" --> 1 tuple [id_umi, path_mx, id_cb, path_cb]
     mx_cb_channel = aggr_filtered_ch.combine(user_barcodes_ch)
-	.filter{id_umi, path_mx, id_cb, path_cb -> filter_function(id_umi, path_mx, id_cb, path_cb)}.view()
+	.filter{id_umi, path_mx, id_cb, path_cb -> filter_function(id_umi, path_mx, id_cb, path_cb)}
     
 // if (params.module2.downstream_umi== "auto" && params.module2.users_cellbarcodes == "auto") {
 // 		id_umi == id_cb} else {true}
@@ -595,7 +595,7 @@ workflow module2 {
     // id_cb == "custom" || id_umi == "custom"}.view()
     // postprocessing using matrix with the filtered barcodes and table with user
     // defined barcodes
-    mx_cb_channel | aggregation_postprocessing
+    mx_cb_channel | create_aggr_rds | aggregation_postprocessing
 }
 
 process cellranger_aggregate {
@@ -672,7 +672,7 @@ process get_user_defined_cellbarcodes {
     """
 }
 
-process aggregation_postprocessing {
+process create_aggr_rds {
 
     tag "${downstream_umi_id}-MX_${cb_id}-CB"
     beforeScript 'source $HOME/.bashrc; module load miniconda'
@@ -681,37 +681,65 @@ process aggregation_postprocessing {
     cpus 8
     memory '64 GB'
 
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/plots", mode: "copy", pattern: "*.pdf", overwrite: true
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/data", mode: "copy", pattern: "*.csv", overwrite: true
-    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/rds", mode: "copy", pattern: "*.rds", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/rds/", mode: "copy", pattern: "*.rds", overwrite: true
     
     input:
-    // tuple val(downstream_umi_id), val(filtered_mx)
-    // val(barcodes_mx)
     tuple val(downstream_umi_id), val(filtered_mx), val(cb_id), val(barcodes_mx)
     
     output:
+    tuple val(downstream_umi_id), val(cb_id), path("${downstream_umi_id}_matrix_${cb_id}_cellbarcodes.rds"), emit: rds
+    
+    script:
+    output_rds = "${downstream_umi_id}_matrix_${cb_id}_cellbarcodes.rds"
+    
+    """
+    061_prelim_rds.R \
+	--filtered ${filtered_mx} \
+	--userdefined_cellbarcodes ${barcodes_mx}\
+	--mt_percent ${params.module2.mt_percent}\
+	--min_genes ${params.module2.min_genes}\
+	--min_counts ${params.module2.min_counts}\
+	--output_rds ${output_rds}
+    """
+
+    stub:
+    output_rds = "${downstream_umi_id}_matrix_${cb_id}_cellbarcodes.rds"
+    """
+    touch ${output_rds}
+    """
+}
+
+process aggregation_postprocessing {
+
+    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    conda '/projectnb2/wax-es/routines/condaenv/rlang4'
+    
+    cpus 8
+    memory '64 GB'
+
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/plots_${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/", mode: "copy", pattern: "*.pdf", overwrite: true
+    publishDir path: "${params.output_dir}/module_2_outputs/postaggregation/data_${downstream_umi_id}_matrix_${cb_id}_cellbarcodes/", mode: "copy", pattern: "*.csv", overwrite: true
+    
+    input:
+    tuple val(downstream_umi_id), val(cb_id), path(rds)
+    
+    output:
     path("*.pdf")
-    path("*.rds"), optional: true
     path("*.csv"), optional: true
     
     script:
     """
-    06_postaggregation.R --filtered ${filtered_mx} \
-		 --userdefined_cellbarcodes ${barcodes_mx}\
-		 --nclusters ${params.module2.seurat_nclusters}\
-		 --mt_percent ${params.module2.mt_percent}\
-		 --min_genes ${params.module2.min_genes}\
-		 --min_counts ${params.module2.min_counts}\
-		 --dotplot_gene_list ${projectDir}/${params.module2.dotplot_gene_list}\
-		 --featureplot_gene_list ${projectDir}/${params.module2.featureplot_gene_list}\
-                 --seurat_cluster_labels ${projectDir}/${params.module2.seurat_cluster_labels}\
-                 --labels_for_umap ${params.module2.labels_for_umap}\
-                 --umap_min_dist ${params.module2.umap_min_dist}\
-                 --umap_npcs ${params.module2.umap_npcs} \
-                 --umap_kparam ${params.module2.umap_kparam} \
-                 --umap_resolution ${params.module2.umap_resolution} \
-                 --number_of_cores ${task.cpus}
+    cp ${projectDir}/bin/UmapPlot.R ./
+    
+    062_final_umaps.R --input_rds ${rds} \
+	--nclusters ${params.module2.seurat_nclusters}\
+	--dotplot_gene_list ${projectDir}/${params.module2.dotplot_gene_list}\
+	--featureplot_gene_list ${projectDir}/${params.module2.featureplot_gene_list}\
+        --umap_min_dist ${params.module2.umap_min_dist}\
+        --umap_npcs ${params.module2.umap_npcs} \
+        --umap_kparam ${params.module2.umap_kparam} \
+        --umap_resolution ${params.module2.umap_resolution} \
+        --number_of_cores ${task.cpus}
     
     ## TODO: replace SCC installed imagemagick to conda
     ## for range of parameters (like --nclusters "6,7,8") represent all plots as 
@@ -727,10 +755,10 @@ process aggregation_postprocessing {
     stub:
     """
     touch stub_aggr_umap.pdf
-    touch stub.rds
     touch stub_data.csv
     """
 }
+
 
 // MODULE_3 (Extraction/Combining clusters)
 workflow module3 {
