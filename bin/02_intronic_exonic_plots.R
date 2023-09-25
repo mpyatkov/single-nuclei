@@ -235,34 +235,50 @@ plot_gtf_based_svm <- function(df, main_title, plot_type="gtf"){
     predicted <- svm_df %>%
         mutate(predicted = ifelse(intronic_umi > (svm_out$slope * exonic_umi + svm_out$intercept), "pop1", "pop2" ))
     
-    if (length(table(predicted$predicted)) == 1) {
-        print(paste0("WARNING: NOT ENOUGH LEVELS TO PRINT SVM POPULATIONS"))
-        return(NULL)
-    }
-    
-    num_adj_pop1 <- table(predicted$predicted)[['pop1']]
-    num_adj_pop2 <- table(predicted$predicted)[['pop2']]
-    
-    ## make title
-    t_title_model <- str_interp("${main_title}\nNumber of non-mito cells: ${number_of_cells}\nslope=${svm_out$slope}, intercept=${svm_out$intercept}\nMod.pop I = ${num_model_1}, Mod.pop II = ${num_model_0}\nAdj.pop I = ${num_adj_pop1}, Adj.pop II = ${num_adj_pop2}")
-    t_title_gtf <- str_interp("${main_title}\nNumber of non-mito cells: ${number_of_cells}\nslope=${svm_out$slope}, intercept=${svm_out$intercept}")
-    
-    t_title <- ifelse(plot_type=="gtf", t_title_gtf, t_title_model)
-    
     ## return ggplot object up to plot_type
     if (plot_type == "gtf") {
-        p <- ggplot(data=df, 
-                    aes(x=exonic_umi, 
-                        y=intronic_umi, 
-                        color=as.factor(summ2)))
+      p <- ggplot(data=df, 
+                  aes(x=exonic_umi, 
+                      y=intronic_umi, 
+                      color=as.factor(summ2)))
     } else {
-        p <- ggplot(data=svm_df, 
-                    aes(x=exonic_umi, 
-                        y=intronic_umi, 
-                        color=factor(marker, labels = c("Model pop II", "Model pop I"))))
+      p <- ggplot(data=svm_df, 
+                  aes(x=exonic_umi, 
+                      y=intronic_umi, 
+                      color=factor(marker, labels = c("Model pop II", "Model pop I"))))
     }
     
-    p +
+    plot <- if (length(table(predicted$predicted)) == 1) {
+      
+      print(paste0("WARNING: NOT ENOUGH LEVELS TO PRINT SVM POPULATIONS"))
+      ## make title
+      t_title_model <- str_interp("${main_title} (No data for SVM)\nNumber of non-mito cells: ${number_of_cells}\nslope=1, intercept=0\nMod.pop I = ${num_model_1}, Mod.pop II = ${num_model_0}\nSVM.pop I = ${num_adj_pop1}, SVM.pop II = ${num_adj_pop2}")
+      t_title_gtf <- str_interp("${main_title} (No data for SVM)\nNumber of non-mito cells: ${number_of_cells}\nslope=1, intercept=0")
+      
+      t_title <- ifelse(plot_type=="gtf", t_title_gtf, t_title_model)
+      p +
+        geom_point(size=1) +
+        geom_abline(intercept =0 , slope = 1, linetype = "dashed")+
+        scale_colour_brewer(palette = "Set1")+
+        guides(color=guide_legend(title=ifelse(plot_type == "gtf",
+                                               "Number of GTFs in point", 
+                                               "Model labeling"),
+                                  override.aes = list(size=5)))+
+        theme_light()+
+        theme()+ggtitle(t_title)
+    
+    } else {
+      num_adj_pop1 <- table(predicted$predicted)[['pop1']]
+      num_adj_pop2 <- table(predicted$predicted)[['pop2']]
+      
+      ## make title
+      t_title_model <- str_interp("${main_title}\nNumber of non-mito cells: ${number_of_cells}\nslope=${svm_out$slope}, intercept=${svm_out$intercept}\nMod.pop I = ${num_model_1}, Mod.pop II = ${num_model_0}\nAdj.pop I = ${num_adj_pop1}, Adj.pop II = ${num_adj_pop2}")
+      t_title_gtf <- str_interp("${main_title}\nNumber of non-mito cells: ${number_of_cells}\nslope=${svm_out$slope}, intercept=${svm_out$intercept}")
+      
+      t_title <- ifelse(plot_type=="gtf", t_title_gtf, t_title_model)
+      
+    
+      p +
         geom_point(size=1) +
         geom_abline(intercept =0 , slope = 1, linetype = "dashed")+
         geom_abline(intercept=svm_out$intercept, slope =svm_out$slope, color = "blue")+
@@ -272,7 +288,10 @@ plot_gtf_based_svm <- function(df, main_title, plot_type="gtf"){
                                                "Model labeling"),
                                   override.aes = list(size=5)))+
         theme_light()+
-        theme()+ggtitle(t_title)
+        theme()+ggtitle(t_title)  
+    }
+
+    plot
 }
 
 plot_one_intercept_slope <- function(df, intercept_column, config = NULL) {
@@ -400,7 +419,7 @@ panel_03_3gtf_plot <- function(df) {
 }
 
 ## wrapper for all previous functions
-plot_01_02_03_panels <- function(panel_01, panel_01_labels, sample_id) {
+plot_01_02_03_panels <- function(panel_01, panel_01_labels, sample_id, downstream_gtf) {
     ## create plots for each mt level separately, each plot represents as ggplot object in 'plot' variable
     panel_01_nested_df <- panel_01 %>% 
         group_by(mt_level) %>%
@@ -414,7 +433,9 @@ plot_01_02_03_panels <- function(panel_01, panel_01_labels, sample_id) {
     
     # panel_01_plot
     fout <- paste0(sample_id,"_","01_mt_levels_filtering.pdf")
-    ggsave(fout, plot = panel_01_plot, width = 18, height = 14)
+    if (downstream_gtf != "genebody"){
+      ggsave(fout, plot = panel_01_plot, width = 18, height = 14)
+    }
     
     #### using SVM to separate Non-mito subset of cells as Population I and Population II ########
     ## svm requires that dots already will have a labels
@@ -450,8 +471,9 @@ plot_01_02_03_panels <- function(panel_01, panel_01_labels, sample_id) {
     
     fout <- paste0(argv$sample_id,"_","02_svm_model.pdf")
     #ggsave("panel_02_svm_model.png", plot = panel_02_plot_model, width = 18, height = 14)
-    ggsave(fout, plot = panel_02_plot_model, width = 18, height = 14)
-    
+    if (downstream_gtf != "genebody"){
+      ggsave(fout, plot = panel_02_plot_model, width = 18, height = 14)
+    }
     ################## panel for gtf data ####
     panel_02_nested_df_gtf <- panel_01 %>% 
         filter(mt_pass == "Non-mito") %>% 
@@ -479,8 +501,9 @@ plot_01_02_03_panels <- function(panel_01, panel_01_labels, sample_id) {
     
     #ggsave("panel_02_svm_gtf.png", plot = panel_02_plot_gtf, width = 18, height = 14)
     fout <- paste0(sample_id,"_","02_svm_gtf.pdf")
-    ggsave(fout, plot = panel_02_plot_gtf, width = 18, height = 14)
-    
+    if (downstream_gtf != "genebody"){
+      ggsave(fout, plot = panel_02_plot_gtf, width = 18, height = 14)
+    }
     #### Plot multiple static slopes and intercepts against different level of contamination filtering ####
     
     # ## specific slopes and intercepts for static slope/intercept plots
@@ -499,10 +522,11 @@ plot_01_02_03_panels <- function(panel_01, panel_01_labels, sample_id) {
     
     ## save all panels as file with multipages
     fout <- paste0(sample_id,"_","02_static_slopes_intercepts.pdf")
+    if (downstream_gtf != "genebody"){
     plot_all_mtlevels$plot %>%
         marrangeGrob(nrow = 1, ncol = 1) %>%
         ggsave(filename = fout, width = 14, height = 18)
-    
+    }
     #### end
     
     ####
@@ -514,7 +538,9 @@ plot_01_02_03_panels <- function(panel_01, panel_01_labels, sample_id) {
     pp <- panel_03_3gtf_plot(panel_01)
     #ggsave("panel_03_3gtf_dots_distribution.png", plot = pp, width = 16, height = 12.40)
     fout <- paste0(sample_id,"_","03_3gtf_dots_distribution.pdf")
-    ggsave(fout, plot = pp, width = 16, height = 12.40)
+    if (downstream_gtf != "genebody"){
+      ggsave(fout, plot = pp, width = 16, height = 12.40)
+    }
     ### end triple distributions
 }
 
@@ -1181,7 +1207,8 @@ gc()
 ## downstream_seurat_name
 ## downstream_seurat
 
-default_mt_gtf <- "withmono"
+# default_mt_gtf <- "withmono"
+default_mt_gtf <- DOWNSTREAM
 default_mt_percent <- 10
 DEFAULT_CONFIG = list(
     downstream_gtf_name = downstream_seurat_name,
@@ -1308,7 +1335,7 @@ panel_01_labels <- panel_01 %>%
 
 
 
-plot_01_02_03_panels(panel_01, panel_01_labels, argv$sample_id)
+plot_01_02_03_panels(panel_01, panel_01_labels, argv$sample_id, DOWNSTREAM)
 ##### PART II. UMAPs #####
 
 # Elbow plot to select the PC for running umap and finding cluster.
@@ -1451,11 +1478,11 @@ umap_plots <- slope_intercept_list %>%
     plot_annotation(title = get_label(only_filtered,DEFAULT_CONFIG)) &
     theme(legend.text = element_text(size=15),
           legend.title = element_text(size=15),
-          legend.position = 'bottom', 
+          legend.position = 'top', 
           plot.title = element_text(size = 18))
 
 #umap_plots
-fout <- paste0(argv$sample_id,"_","04_umap_plots_populations.pdf")
+fout <- str_glue("{argv$sample_id}_{DOWNSTREAM}_04_umap_plots_populations.pdf")
 ggsave(fout, width = 27.14, height = 35)
 rm(short_seurat)
 ##### PANEL_04_2 #####
@@ -1481,7 +1508,7 @@ rm(short_seurat)
 #plot_one_intercept_slope(only_filtered, "slope_user_intercept_user", config = USER_DEFINED)
 
 ## make 2-pages user defined params plot and save to file
-fout <- paste0(argv$sample_id,"_","05_user_defined_only.pdf")
+fout <- str_glue("{argv$sample_id}_{DOWNSTREAM}_05_user_defined_only.pdf")
 user_defined_plots(df = only_filtered, 
                    downstream_seurat = downstream_seurat, 
                    config = USER_DEFINED) %>% 
@@ -1539,7 +1566,8 @@ p1 <- combined_clusters_to_scatterplot(all_cb_seurat,
                                        "Mapping clusters intronic/exonic ", 
                                        DEFAULT_CONFIG, 
                                        USER_DEFINED)
-fout <- paste0(argv$sample_id,"_","06_clusters_to_scatterplot.pdf")
+
+fout <- str_glue("{argv$sample_id}_{DOWNSTREAM}_06_clusters_to_scatterplot.pdf")
 p1 %>% 
     marrangeGrob(nrow = 1, ncol = 1) %>%
     ggsave(filename = fout, width = 24, height = 18.60)
