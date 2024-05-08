@@ -248,6 +248,9 @@ plot_gtf_based_svm <- function(df, main_title, plot_type="gtf"){
                       color=factor(marker, labels = c("Model pop II", "Model pop I"))))
     }
     
+    num_adj_pop1 <- if ('pop1' %in% names(table(predicted$predicted))) {table(predicted$predicted)[['pop1']]} else {0}
+    num_adj_pop2 <- if ('pop2' %in% names(table(predicted$predicted))) {table(predicted$predicted)[['pop2']]} else {0}
+    
     plot <- if (length(table(predicted$predicted)) == 1) {
       
       print(paste0("WARNING: NOT ENOUGH LEVELS TO PRINT SVM POPULATIONS"))
@@ -268,9 +271,7 @@ plot_gtf_based_svm <- function(df, main_title, plot_type="gtf"){
         theme()+ggtitle(t_title)
     
     } else {
-      num_adj_pop1 <- table(predicted$predicted)[['pop1']]
-      num_adj_pop2 <- table(predicted$predicted)[['pop2']]
-      
+
       ## make title
       t_title_model <- str_interp("${main_title}\nNumber of non-mito cells: ${number_of_cells}\nslope=${svm_out$slope}, intercept=${svm_out$intercept}\nMod.pop I = ${num_model_1}, Mod.pop II = ${num_model_0}\nAdj.pop I = ${num_adj_pop1}, Adj.pop II = ${num_adj_pop2}")
       t_title_gtf <- str_interp("${main_title}\nNumber of non-mito cells: ${number_of_cells}\nslope=${svm_out$slope}, intercept=${svm_out$intercept}")
@@ -1257,17 +1258,18 @@ USER_DEFINED <- list(
 # each column has 'gtf' name and values {0,1} depending on whether 
 # the CB passes the filtering threshold  
 # https://stackoverflow.com/questions/26003574/use-dynamic-variable-names-in-dplyr
-mtfiltering_cols <- cross_df(list(gtf=DEFAULT_CONFIG$gtfs, percent=DEFAULT_CONFIG$percents)) %>% 
-    rowwise() %>% 
-    mutate(fullname=paste0("percent.mt_",gtf),
-           gtf = paste0(gtf,"_mt",percent),
-           percent = as.numeric(percent)) %>% 
-    pmap_dfc(function(gtf,percent,fullname) { 
-        only_filtered %>% 
-            select(percent.mt_genebody, percent.mt_withmono) %>% 
-            mutate("{gtf}" := ifelse(!!sym(fullname) > percent, 0, 1)) %>% 
-            select(!contains("percent"))
-    })
+mtfiltering_cols <- tidyr::expand_grid(gtf=DEFAULT_CONFIG$gtfs, percent=DEFAULT_CONFIG$percents) %>% 
+  arrange(percent) %>% 
+  rowwise() %>% 
+  mutate(fullname=paste0("percent.mt_",gtf),
+         gtf = paste0(gtf,"_mt",percent),
+         percent = as.numeric(percent)) %>% 
+  pmap_dfc(function(gtf,percent,fullname) { 
+    only_filtered %>% 
+      select(percent.mt_genebody, percent.mt_withmono) %>% 
+      mutate("{gtf}" := ifelse(!!sym(fullname) > percent, 0, 1)) %>% 
+      select(!contains("percent"))
+  })
 
 ## main table which will be used in all downstream calculations
 only_filtered <- only_filtered %>% 
