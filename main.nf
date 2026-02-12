@@ -14,6 +14,7 @@ params {
     }
 
     module1 {
+	// samples.csv is auto-generated from samples.xlsx by pipeline.sh
 	samples_general = 'samples.csv'
     }
 }
