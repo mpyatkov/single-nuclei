@@ -141,6 +141,7 @@ workflow {
     // Step 4: Create RDS files and extract cell barcodes
     rds_and_h5_processing(samples_dirs_ch)
 
+    rds_and_h5_processing.out.rds | final_rds
     // Step 5: Calculate aggregate metrics from all samples
     summary_path = channel.value("${projectDir}/${params.output_dir}/raw_h5_and_cloupe_files/")
     calc_metrics(summary_path)
@@ -284,4 +285,26 @@ process rds_and_h5_processing {
       --output_cellbarcodes "${sample_id}_union_cellbarcodes.csv"
     """
 
+}
+
+process final_rds {
+  tag "${sample_id}"
+
+    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    
+    cpus 1
+    memory '16 GB'
+
+    publishDir path: "${params.output_dir}/module_1_outputs/final_rds/", mode: "copy", pattern: "*.rds", overwrite: true 
+
+    input:
+    tuple val(sample_id), path(rda)
+    
+    output:
+    tuple val("${sample_id}"), path("*filtered.rds"), emit: cellbarcodes
+
+    script:
+    """
+    02_rda_to_rds.R --rda ${rda} --sample_id ${sample_id}
+    """
 }
