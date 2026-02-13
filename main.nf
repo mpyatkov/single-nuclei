@@ -12,45 +12,26 @@ nextflow.enable.dsl=2
  * - intronic-without-mono: Count only intronic reads for multiexonic genes
  */
 
-params {
-    // SCC project identifier for job submission
-    scc_project = 'wax-dk'
-    
-    // Output directory for all results
-    output_dir = 'output'
 
-    // Reference genome and annotation configuration
-    preprocessing {
-	// Four GTF counting strategies (comma-separated)
-	// These define which genomic features to count for each reference
-	indexes = 'exonic_mm10,intronic-without-mono_mm10,genebody_mm10,intronic-with-mono_mm10'
-	
-	// Base path for reference databases
-	main_db_path = '/projectnb/wax-es/routines'
-	
-	// Directory containing reference genome FASTA files
-	fasta_dir = "${params.preprocessing.main_db_path}/FASTA"
-	
-	// Directory containing GTF annotation files
-	gtfs_dir = "${params.preprocessing.main_db_path}/SC_GTFS"
-	
-	// Directory for storing built Cell Ranger indexes
-	indexes_output_dir = "${params.preprocessing.main_db_path}/SC_INDEXES"
-    }
+// SCC project identifier for job submission
+params.scc_project = 'wax-dk'
 
-    // Sample configuration
-    module1 {
-	// samples.csv is auto-generated from samples.xlsx by pipeline.sh
-	// Expected columns: sample_id, chemistry, condition, path_to_r1
-	samples_general = 'samples.csv'
-    }
-    
-    // Software module versions
-    modules {
-	cellranger = 'cellranger/6.0.1'
-	bcl2fastq = 'bcl2fastq/2.20'
-    }
-}
+// Output directory for all results
+params.output_dir = 'output'
+
+// Reference genome and annotation configuration
+params.indexes = 'exonic_mm10,intronic-without-mono_mm10,genebody_mm10,intronic-with-mono_mm10'
+params.main_db_path = '/projectnb/wax-es/routines'
+params.fasta_dir = "${params.main_db_path}/FASTA"
+params.gtfs_dir = "${params.main_db_path}/SC_GTFS"
+params.indexes_output_dir = "${params.main_db_path}/SC_INDEXES"
+
+// Sample configuration
+params.samples_general = 'samples.csv'
+
+// Software module versions
+params.cellranger = 'cellranger/6.0.1'
+params.bcl2fastq = 'bcl2fastq/2.20'
 
 /**
  * Extract sample prefix and directory from R1 FASTQ file paths
@@ -80,7 +61,7 @@ def vget_prefix(path_to_r1) {
 include { CHECK_DB } from './modules/cellranger_mkref.nf'
 
 // Load sample configuration as a value channel
-samples_ch = channel.value(file(params.module1.samples_general))
+samples_ch = channel.value(file(params.samples_general))
 
 /**
  * Create channel with sample metadata from CSV file
@@ -94,8 +75,8 @@ samples_ch = channel.value(file(params.module1.samples_general))
  * Multiple R1 files per sample are grouped together
  */
 samples_reads_ch = Channel
-    .fromPath(params.module1.samples_general)
-    .ifEmpty{exit 1, "Cannot find ${params.module1.samples_general} configuration file"}
+    .fromPath(params.samples_general)
+    .ifEmpty{exit 1, "Cannot find ${params.samples_general} configuration file"}
     .splitCsv(skip:1)  // Skip header row
     .groupTuple(by:0)   // Group by sample_id (column 0)
     .map{it -> [it[0],              // sample_id
@@ -116,7 +97,7 @@ samples_reads_ch = Channel
 workflow {
     
     // Step 1: Get or build reference indexes for all GTF files
-    db_indexes = CHECK_DB(params.preprocessing.indexes)
+    db_indexes = CHECK_DB(params.indexes)
 
     // Step 2: Run Cell Ranger count for each sample against each reference
     samples_reads_ch.combine(db_indexes) | cellranger_count
@@ -163,7 +144,7 @@ process cellranger_count {
     time '24h'
     
     // Load required software modules
-    beforeScript "source \$HOME/.bashrc; module load ${params.modules.bcl2fastq}; module load ${params.modules.cellranger}"
+    beforeScript "source \$HOME/.bashrc; module load ${params.bcl2fastq}; module load ${params.cellranger}"
     
     // Store results permanently (not in work directory)
     storeDir "${params.output_dir}/raw_h5_and_cloupe_files/${sample_id}"
@@ -290,7 +271,7 @@ process rds_and_h5_processing {
 process final_rds {
   tag "${sample_id}"
 
-    beforeScript 'source $HOME/.bashrc; module load miniconda'
+    beforeScript 'source $HOME/.bashrc'
     
     cpus 1
     memory '16 GB'
@@ -305,6 +286,7 @@ process final_rds {
 
     script:
     """
+    module load R/4.4.3
     02_rda_to_rds.R --rda ${rda} --sample_id ${sample_id}
     """
 }

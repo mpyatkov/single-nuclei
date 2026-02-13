@@ -36,8 +36,8 @@ workflow CHECK_DB {
 	    
 	    // Return tuple: [index_name, fasta_path, gtf_path]
 	    [index_name,
-	     file("${params.preprocessing.fasta_dir}/genome_${genome}.fa", checkIfExists: true),
-	     file("${params.preprocessing.gtfs_dir}/${index_name}.gtf", checkIfExists: true)
+	     file("${params.fasta_dir}/genome_${genome}.fa", checkIfExists: true),
+	     file("${params.gtfs_dir}/${index_name}.gtf", checkIfExists: true)
 	    ]
 	} | build_cellranger_index
 
@@ -63,7 +63,7 @@ process build_cellranger_index {
     beforeScript "source \$HOME/.bashrc; module load ${params.modules.bcl2fastq}; module load ${params.modules.cellranger}"
     
     // Persist built indexes to shared location (not work directory)
-    storeDir "${params.preprocessing.indexes_output_dir}"
+    storeDir "${params.indexes_output_dir}"
 
     input:
     // Tuple: index_name, fasta_file, gtf_file

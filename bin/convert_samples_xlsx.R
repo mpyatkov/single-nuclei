@@ -33,6 +33,6 @@ if (length(missing_cols) > 0) {
 if (argv$output == '-') {
   write.csv(data, stdout(), row.names = FALSE)
 } else {
-  write.csv(data, argv$output, row.names = FALSE)
+  write.csv(data, argv$output, row.names = FALSE, quote = FALSE)
   cat(sprintf("Successfully converted %s to %s\n", argv$input, argv$output))
 }
