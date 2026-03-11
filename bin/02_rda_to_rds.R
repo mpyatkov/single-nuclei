@@ -152,6 +152,11 @@ save_rds_file_v2 <- function(rda_path, sample_id) {
   #write_csv(sobj@meta.data %>% mutate(sample_id = new_sample_id), str_c(new_sample_id, "_metadata_20260203.csv"))
   #plots <- plot_qc(sobj,new_sample_id)
   #ggsave(str_c(new_sample_id,"_qc.pdf"),plots, width = 18, height = 9)
+
+  ## rename cellbarcodes from AAA..AAA-1 to AAA..AAA-1_<sample_id>
+  new_barcodes <- paste0(colnames(sobj), "_", sobj@meta.data$orig.ident)
+  sobj <- RenameCells(sobj, new.names = new_barcodes)
+
   saveRDS(sobj, str_c(new_sample_id,"_filtered.rds"))
   rm(sobj)
   gc()
