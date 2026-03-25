@@ -141,6 +141,12 @@ filter_low_quality <- function(obj){
   obj
 }
 
+rename_metadata_column <- function(sobj){
+  sobj@meta.data$CB_original <- rownames(sobj@meta.data)
+  sobj@meta.data$CB <- NULL
+  sobj
+}
+
 save_rds_file_v2 <- function(rda_path, sample_id) {
   new_sample_id <- ifelse(str_detect(sample_id,"_"), sample_id, str_replace(sample_id,"M","_M"))
   sobj <- read_rds_v2(rda_path)
@@ -157,6 +163,9 @@ save_rds_file_v2 <- function(rda_path, sample_id) {
   new_barcodes <- paste0(colnames(sobj), "_", sobj@meta.data$orig.ident)
   sobj <- RenameCells(sobj, new.names = new_barcodes)
 
+  ## rename CB to CB_original
+  sobj <- rename_metadata_column(sobj)
+    
   saveRDS(sobj, str_c(new_sample_id,"_filtered.rds"))
   rm(sobj)
   gc()
